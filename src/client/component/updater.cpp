@@ -157,7 +157,8 @@ namespace updater
 		{
 			static std::vector<std::string> server_urls =
 			{
-				{"https://iw7-mod.auroramod.dev/"},
+				{"https://github.com/CBServers/updater/raw/main/updater/iw7-mod/"},
+				{"https://iw7-mod.auroramod.dev/"}
 			};
 
 			const auto try_url = [&](const std::string& base_url)

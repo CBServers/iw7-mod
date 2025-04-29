@@ -408,6 +408,34 @@ namespace gsc
 				print(args);
 				return scripting::script_value{};
 			});
+
+			function::add("say", [](const function_args& args)
+			{
+				const auto message = args[0].as<std::string>();
+				game::SV_GameSendServerCommand(-1, game::SV_CMD_CAN_IGNORE, utils::string::va("%c \"%s\"", 84, message.data()));
+
+				return scripting::script_value{};
+			});
+
+			method::add("tell", [](const game::scr_entref_t ent, const function_args& args)
+			{
+				if (ent.classnum != 0)
+				{
+					throw std::runtime_error("Invalid entity");
+				}
+
+				const auto client = ent.entnum;
+
+				if (game::g_entities[client].client == nullptr)
+				{
+					throw std::runtime_error("Not a player entity");
+				}
+
+				const auto message = args[0].as<std::string>();
+				game::SV_GameSendServerCommand(client, game::SV_CMD_CAN_IGNORE, utils::string::va("%c \"%s\"", 84, message.data()));
+
+				return scripting::script_value{};
+			});
 		}
 	};
 }

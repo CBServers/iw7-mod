@@ -81,6 +81,8 @@ namespace party
 		std::vector<fastdl_file> mod_files =
 		{
 			{".ff", "mod_hash", false},
+			{".sabl", "sabl_hash", false},
+			{".sabs", "sabs_hash", false},
 		};
 
 		std::unordered_map<std::string, std::string> hash_cache;
@@ -460,8 +462,6 @@ namespace party
 					memset(&*reinterpret_cast<__int64*>(0x144E3A490 + 8), 0, 0x78680ui64 - 8);
 				}
 			}
-
-			utils::hook::invoke<void>(0x140C55DF0); // SV_InitMP_SetXUIDConfigStrings
 		}
 
 		void reset_mem_stuff_stub(utils::hook::assembler& a)
@@ -478,9 +478,7 @@ namespace party
 
 		void send_user_info()
 		{
-			auto userinfostring = utils::hook::invoke<const char*>(0x1409B2850, 0); // CL_MainMP_GetUserInfoString
-			auto cmd = utils::string::va("userinfo \"%s\"", userinfostring);
-			utils::hook::invoke<void>(0x140341430, 0, cmd); // CL_Main_AddReliableCommand
+			utils::hook::invoke<void>(0x1409B3EB0, 0); // CL_MainMP_SendUserInfoCmd
 		}
 
 		void cl_initialize_gamestate_stub(int local_client_num)
@@ -492,6 +490,37 @@ namespace party
 
 			utils::hook::invoke<void>(0x1409B2FA0, local_client_num);
 		}
+
+		utils::hook::detour sv_set_player_info_string_hook;
+		void sv_set_player_info_string_stub(int clientNum, const char* xuidString, const char* xnaddrString, const char* natTypeString, const char* npIdString, const char* partyIpString)
+		{
+			uint64_t xuid64{};
+			game::StringToXUID(xuidString, &xuid64);
+			const auto lobby = game::SV_MainMP_GetServerLobby();
+			if (game::Session_FindRegisteredUser(lobby, xuid64) == 0xFFFFFFFFui64)
+			{
+				const auto client = game::svs_clients[clientNum];
+				const auto privateSlot = clientNum < game::SV_GameMP_GetAgentCount();
+				game::Session_RegisterRemotePlayer(0, lobby, xuid64, privateSlot, clientNum, std::atoi(natTypeString), const_cast<char*>(xnaddrString), &client->remoteAddress);
+			}
+
+			console::info("Setting client %i XUID to %s\n", clientNum, xuidString);
+			sv_set_player_info_string_hook.invoke<void>(clientNum, xuidString, xnaddrString, natTypeString, npIdString, partyIpString);
+		}
+	}
+
+	game::GameModeType get_game_mode_from_mapname(const std::string& mapname)
+	{
+		if (mapname.find("mp_") == 0)
+		{
+			return game::GAME_MODE_MP;
+		}
+		else if (mapname.find("cp_") == 0)
+		{
+			return game::GAME_MODE_CP;
+		}
+
+		return game::GAME_MODE_SP;
 	}
 
 	void start_map(const std::string& mapname, bool dev)
@@ -507,6 +536,7 @@ namespace party
 		{
 			scheduler::once([=]()
 			{
+				game::Com_GameMode_SetDesiredGameMode(get_game_mode_from_mapname(mapname));
 				start_map(mapname, dev);
 			}, scheduler::pipeline::main, 1s);
 			return;
@@ -559,7 +589,7 @@ namespace party
 			command::execute(utils::string::va("seta ui_hardcore %d", hardcore->current.enabled), true);
 		}
 
-		if (!utils::hook::invoke<bool>(0x1409CDCF0, game::Lobby_GetPartyData()) || game::Com_FrontEnd_IsInFrontEnd())
+		if (!game::Lobby_GetPartyData()->party_systemActive || game::Com_FrontEnd_IsInFrontEnd())
 		{
 			if (game::environment::is_dedi())
 			{
@@ -712,13 +742,7 @@ namespace party
 			utils::hook::set<uint8_t>(0x140B5377E, 0xEB);
 
 			utils::hook::call(0x1409B70A1, cl_initialize_gamestate_stub);
-
-			command::add("senduserinfo", []()
-			{
-				auto userinfostring = utils::hook::invoke<const char*>(0x1409B2850, 0); // CL_MainMP_GetUserInfoString
-				auto cmd = utils::string::va("userinfo \"%s\"", userinfostring);
-				utils::hook::invoke<void>(0x140341430, 0, cmd); // CL_Main_AddReliableCommand
-			});
+			sv_set_player_info_string_hook.create(0x140C57360, sv_set_player_info_string_stub);
 
 			command::add("map", [](const command::params& args)
 			{

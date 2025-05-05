@@ -33,13 +33,20 @@ namespace auth
 
 		std::string get_hw_profile_guid()
 		{
-			HW_PROFILE_INFO info{};
+			auto hw_profile_path = (utils::properties::get_appdata_path() / "iw7-guid.dat").generic_string();
+			if (utils::io::file_exists(hw_profile_path))
+			{
+				utils::io::remove_file(hw_profile_path);
+			}
+
+			HW_PROFILE_INFO info;
 			if (!GetCurrentHwProfileA(&info))
 			{
 				return {};
 			}
 
-			return std::string{ info.szHwProfileGuid, std::strlen(info.szHwProfileGuid) };
+			auto hw_profile_info = std::string{ info.szHwProfileGuid, sizeof(info.szHwProfileGuid) };
+			return hw_profile_info;
 		}
 
 		std::string get_protected_data()
@@ -63,30 +70,28 @@ namespace auth
 
 		std::string get_key_entropy()
 		{
-			std::string raw_entropy;
-			raw_entropy.append(utils::smbios::get_uuid());
-			raw_entropy.append(get_hw_profile_guid());
-			raw_entropy.append(get_protected_data());
-			raw_entropy.append(get_hdd_serial());
+			std::string entropy{};
+			entropy.append(utils::smbios::get_uuid());
+			entropy.append(get_hw_profile_guid());
+			entropy.append(get_protected_data());
+			entropy.append(get_hdd_serial());
 
-			if (raw_entropy.empty())
+			if (entropy.empty())
 			{
-				raw_entropy.resize(32);
-				utils::cryptography::random::get_data(raw_entropy.data(), raw_entropy.size());
+				entropy.resize(32);
+				utils::cryptography::random::get_data(entropy.data(), entropy.size());
 			}
 
-			return utils::cryptography::sha256::compute(raw_entropy);
+			return entropy;
 		}
 
 		bool load_key(utils::cryptography::ecc::key& key)
 		{
 			std::string data{};
-			const auto key_path = (utils::properties::get_appdata_path() / "iw7-private.key").generic_string();
 
 			auto key_path = (utils::properties::get_key_path() / "cb-private.key").generic_string();
 			if (!utils::io::read_file(key_path, &data))
 			{
-				console::warn("Private key file not found at: %s\n", key_path.data());
 				return false;
 			}
 
@@ -111,7 +116,7 @@ namespace auth
 			auto key_path = (utils::properties::get_key_path() / "cb-private.key").generic_string();
 			if (!utils::io::write_file(key_path, key.serialize()))
 			{
-				console::error("Failed to write cryptographic key to: %s\n", key_path.data());
+				console::error("Failed to write cryptographic key!\n");
 			}
 
 			console::info("Generated cryptographic key: %llX\n", key.get_hash());
@@ -132,13 +137,12 @@ namespace auth
 
 		utils::cryptography::ecc::key get_key_internal()
 		{
-			const auto key = load_or_generate_key();
-			const auto key_path = (utils::properties::get_appdata_path() / "iw7-public.key").generic_string();
+			auto key = load_or_generate_key();
 
 			auto key_path = (utils::properties::get_key_path() / "cb-public.key").generic_string();
 			if (!utils::io::write_file(key_path, key.get_public_key()))
 			{
-				console::error("Failed to write public key to: %s\n", key_path.data());
+				console::error("Failed to write public key!\n");
 			}
 
 			return key;
@@ -146,14 +150,7 @@ namespace auth
 
 		utils::cryptography::ecc::key& get_key()
 		{
-			static std::once_flag init_flag;
-			static utils::cryptography::ecc::key key{};
-
-			std::call_once(init_flag, []()
-			{
-				key = get_key_internal();
-			});
-
+			static auto key = get_key_internal();
 			return key;
 		}
 	}
@@ -162,8 +159,7 @@ namespace auth
 	{
 		if (game::environment::is_dedi())
 		{
-			static uint64_t session_guid = 0x110000100000000 | (::utils::cryptography::random::get_integer() & ~0x80000000);
-			return session_guid;
+			return 0x110000100000000 | (::utils::cryptography::random::get_integer() & ~0x80000000);
 		}
 
 		return get_key().get_hash();

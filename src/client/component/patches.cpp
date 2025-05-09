@@ -8,6 +8,8 @@
 #include "filesystem.hpp"
 #include "dvars.hpp"
 
+#include "component/console/console.hpp"
+
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
 
@@ -19,6 +21,8 @@ namespace patches
 		utils::hook::detour com_game_mode_supports_feature_hook;
 		utils::hook::detour live_get_map_index_hook;
 		utils::hook::detour content_do_we_have_content_pack_hook;
+
+		utils::hook::detour sub_140D77C00_hook;
 
 		std::string get_login_username()
 		{
@@ -222,6 +226,39 @@ namespace patches
 		{
 			utils::hook::invoke<void>(0x140C58E20); // SV_MainMP_MatchEnd
 		}
+
+		int64_t sub_140D77C00_stub(uint64_t** a1, uint32_t a2, int64_t a3, int64_t a4,
+			int a5, int a6, int a7, int a8)
+		{
+			// Check if a1 is NULL
+			if (!a1)
+			{
+				console::warn("Prevented crash: a1 was NULL in sub_140D77C00\n");
+				return 0;
+			}
+
+			// Check if *a1 is NULL
+			if (!*a1)
+			{
+				console::warn("Prevented crash: *a1 was NULL in sub_140D77C00\n");
+				return 0;
+			}
+
+			__try {
+				// Test if we can safely read from [*a1 + 8]
+				(void)*reinterpret_cast<uint16_t*>(reinterpret_cast<char*>(*a1) + 8);
+
+				// If we got here, memory access was successful
+				//console::info("Pointers are valid, calling sub_140D77C00\n");
+				return sub_140D77C00_hook.invoke<int64_t>(a1, a2, a3, a4, a5, a6, a7, a8);
+			}
+			__except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ?
+				EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+				// We caught an access violation
+				console::warn("Prevented crash: Invalid memory access at offset 8 in sub_140D77C00\n");
+				return 0;
+			}
+		}
 	}
 
 	class component final : public component_interface
@@ -229,6 +266,9 @@ namespace patches
 	public:
 		void post_unpack() override
 		{
+			// Create a hook for the function that's crashing
+			sub_140D77C00_hook.create(0x140D77C00, sub_140D77C00_stub);
+
 			// register custom dvars
 			com_register_common_dvars_hook.create(0x140BADF30, com_register_common_dvars_stub);
 

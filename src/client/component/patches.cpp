@@ -22,7 +22,7 @@ namespace patches
 		utils::hook::detour live_get_map_index_hook;
 		utils::hook::detour content_do_we_have_content_pack_hook;
 
-		utils::hook::detour sub_140D77C00_hook;
+		//utils::hook::detour sub_140D77C00_hook;
 
 		std::string get_login_username()
 		{
@@ -227,6 +227,7 @@ namespace patches
 			utils::hook::invoke<void>(0x140C58E20); // SV_MainMP_MatchEnd
 		}
 
+		/*
 		int64_t sub_140D77C00_stub(uint64_t** a1, uint32_t a2, int64_t a3, int64_t a4,
 			int a5, int a6, int a7, int a8)
 		{
@@ -259,6 +260,7 @@ namespace patches
 				return 0;
 			}
 		}
+		*/
 	}
 
 	class component final : public component_interface
@@ -267,7 +269,7 @@ namespace patches
 		void post_unpack() override
 		{
 			// Create a hook for the function that's crashing
-			sub_140D77C00_hook.create(0x140D77C00, sub_140D77C00_stub);
+			//sub_140D77C00_hook.create(0x140D77C00, sub_140D77C00_stub);
 
 			// register custom dvars
 			com_register_common_dvars_hook.create(0x140BADF30, com_register_common_dvars_stub);

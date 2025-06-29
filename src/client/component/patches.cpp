@@ -227,40 +227,27 @@ namespace patches
 			utils::hook::invoke<void>(0x140C58E20); // SV_MainMP_MatchEnd
 		}
 
-		/*
-		int64_t sub_140D77C00_stub(uint64_t** a1, uint32_t a2, int64_t a3, int64_t a4,
-			int a5, int a6, int a7, int a8)
+		void* update_last_seen_players_stub()
 		{
-			// Check if a1 is NULL
-			if (!a1)
+			return utils::hook::assemble([](utils::hook::assembler& a)
 			{
-				console::warn("Prevented crash: a1 was NULL in sub_140D77C00\n");
-				return 0;
-			}
+				const auto safe_continue = a.newLabel();
 
-			// Check if *a1 is NULL
-			if (!*a1)
-			{
-				console::warn("Prevented crash: *a1 was NULL in sub_140D77C00\n");
-				return 0;
-			}
+				// (game's code)
+				a.mov(rax, ptr(rsi)); // g_entities pointer
 
-			__try {
-				// Test if we can safely read from [*a1 + 8]
-				(void)*reinterpret_cast<uint16_t*>(reinterpret_cast<char*>(*a1) + 8);
+				// Avoid crash if pointer is nullptr
+				a.test(rax, rax);
+				a.jz(safe_continue);
 
-				// If we got here, memory access was successful
-				//console::info("Pointers are valid, calling sub_140D77C00\n");
-				return sub_140D77C00_hook.invoke<int64_t>(a1, a2, a3, a4, a5, a6, a7, a8);
-			}
-			__except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ?
-				EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
-				// We caught an access violation
-				console::warn("Prevented crash: Invalid memory access at offset 8 in sub_140D77C00\n");
-				return 0;
-			}
+				// Jump back in (game's code)
+				a.mov(dword_ptr(rax, 0x4D10), 0);
+
+				// Continue to next iter in this loop
+				a.bind(safe_continue);
+				a.jmp(0x140B22287);
+			});
 		}
-		*/
 	}
 
 	class component final : public component_interface
@@ -320,6 +307,7 @@ namespace patches
 			utils::hook::set<uint8_t>(0x1405C90C0, 0xC3);
 
 			// killswitches
+			dvars::override::register_bool("mission_team_contracts_enabled", true, game::DVAR_FLAG_READ);
 			dvars::override::register_bool("killswitch_store", false, game::DVAR_FLAG_READ);
 			dvars::override::register_bool("killswitch_quartermaster", false, game::DVAR_FLAG_READ);
 			dvars::override::register_bool("killswitch_cod_points", false, game::DVAR_FLAG_READ);
@@ -329,12 +317,6 @@ namespace patches
 			dvars::override::register_bool("killswitch_cp_leaderboards", true, game::DVAR_FLAG_READ);
 			dvars::override::register_bool("killswitch_streak_variants", false, game::DVAR_FLAG_READ);
 			dvars::override::register_bool("killswitch_blood_anvil", false, game::DVAR_FLAG_READ);
-
-			// don't use contracts in latin spanish
-			if (!game::SEH_GetLanguageName(17))
-			{
-				dvars::override::register_bool("mission_team_contracts_enabled", true, game::DVAR_FLAG_READ);
-			}
 
 			// announcer packs
 			if (!game::environment::is_dedi())
@@ -373,6 +355,10 @@ namespace patches
 
 			utils::hook::nop(0x140E6A2FB, 2); // don't wait for occlusion query to succeed (forever loop)
 			utils::hook::nop(0x140E6A30C, 2); // ^
+
+			// Patch crash caused by the server trying to kick players for 'invalid password'
+			utils::hook::nop(0x140B2215B, 18);
+			utils::hook::jump(0x140B2215B, update_last_seen_players_stub(), true);
 		}
 	};
 }

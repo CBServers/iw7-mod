@@ -321,7 +321,7 @@ namespace party
 			utils::hook::invoke<void>(0x140D330B0, 0); // Live_SetLobbyPresence
 
 			// Run playlist rule if not in a private match
-			if (!privateMatch/* && !game::environment::is_dedi()*/)
+			if (!privateMatch && !game::environment::is_dedi())
 			{
 				utils::hook::invoke<void>(0x140CCD840, 0, 0); // Playlist_RunRule
 			}
@@ -575,6 +575,19 @@ namespace party
 			return;
 		}
 
+		if (!game::Lobby_GetPartyData()->party_systemActive || game::Com_FrontEnd_IsInFrontEnd())
+		{
+			if (game::environment::is_dedi())
+			{
+				perform_game_initialization(game::Dvar_FindVar("party_maxplayers")->current.integer, false);
+			}
+			else
+			{
+				perform_game_initialization(game::Dvar_FindVar("party_maxplayers")->current.integer,
+					game::Dvar_FindVar("xblive_privatematch")->current.integer);
+			}
+		}
+
 		command::execute(utils::string::va("seta ui_mapname %s", mapname.data()), true);
 
 		auto* gametype = game::Dvar_FindVar("g_gametype");
@@ -587,19 +600,6 @@ namespace party
 		if (hardcore)
 		{
 			command::execute(utils::string::va("seta ui_hardcore %d", hardcore->current.enabled), true);
-		}
-
-		if (!game::Lobby_GetPartyData()->party_systemActive || game::Com_FrontEnd_IsInFrontEnd())
-		{
-			if (game::environment::is_dedi())
-			{
-				perform_game_initialization(game::Dvar_FindVar("party_maxplayers")->current.integer, false);
-			}
-			else
-			{
-				perform_game_initialization(game::Dvar_FindVar("party_maxplayers")->current.integer,
-					game::Dvar_FindVar("xblive_privatematch")->current.integer);
-			}
 		}
 
 		console::info("Starting map: %s\n", mapname.data());
@@ -688,9 +688,9 @@ namespace party
 		server_connection_state.motd.clear();
 	}
 
-	connection_state get_server_connection_state()
+	connection_state* get_server_connection_state()
 	{
-		return server_connection_state;
+		return &server_connection_state;
 	}
 
 	std::optional<discord_information> get_server_discord_info()
@@ -1117,6 +1117,7 @@ namespace party
 
 				server_connection_state.motd = info.get("sv_motd");
 				server_connection_state.max_clients = std::stoi(sv_maxclients_str);
+				server_connection_state.hostname = info.get("hostname");
 
 				const auto profile_info = profile_infos::get_profile_info();
 				if (!profile_info.has_value())

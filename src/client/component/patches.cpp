@@ -22,8 +22,6 @@ namespace patches
 		utils::hook::detour live_get_map_index_hook;
 		utils::hook::detour content_do_we_have_content_pack_hook;
 
-		//utils::hook::detour sub_140D77C00_hook;
-
 		std::string get_login_username()
 		{
 			char username[UNLEN + 1];
@@ -255,9 +253,6 @@ namespace patches
 	public:
 		void post_unpack() override
 		{
-			// Create a hook for the function that's crashing
-			//sub_140D77C00_hook.create(0x140D77C00, sub_140D77C00_stub);
-
 			// register custom dvars
 			com_register_common_dvars_hook.create(0x140BADF30, com_register_common_dvars_stub);
 

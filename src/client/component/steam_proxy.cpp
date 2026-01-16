@@ -11,6 +11,7 @@
 #include <utils/string.hpp>
 #include <utils/binary_resource.hpp>
 
+#include "console/console.hpp"
 #include "steam/interface.hpp"
 #include "steam/steam.hpp"
 
@@ -185,12 +186,9 @@ namespace steam_proxy
 				return;
 			}
 
-#ifndef DEV_BUILD
 			try
 			{
-				const auto res = start_mod("\xF0\x9F\x8C\xA0" "IW7-Mod", steam::SteamUtils()->GetAppID());
-
-				switch (res)
+				switch (const auto res = start_mod("\xF0\x9F\x8C\xA0" "IW7-Mod", steam::SteamUtils()->GetAppID()))
 				{
 				case ownership_state::nosteam:
 					//throw std::runtime_error("Steam must be running to play this game!");
@@ -208,11 +206,11 @@ namespace steam_proxy
 			catch (const std::exception& e)
 			{
 				do_cleanup();
-				printf("Steam: %s\n", e.what());
+				console::debug("Steam: %s\n", e.what());
 				MessageBoxA(GetForegroundWindow(), e.what(), "Error", MB_ICONERROR);
 				TerminateProcess(GetCurrentProcess(), 1234);
 			}
-#endif
+			
 			clean_up_on_error();
 		}
 

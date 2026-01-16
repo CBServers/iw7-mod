@@ -29,6 +29,8 @@ namespace updater
 {
 	namespace
 	{
+		static bool is_debugging_updater = false;
+
 		std::vector<std::string> dedi_ignore =
 		{
 			"ui_scripts/*",
@@ -164,7 +166,10 @@ namespace updater
 			const auto try_url = [&](const std::string& base_url)
 			{
 				const auto url = base_url + endpoint;
-				console::debug("[HTTP] GET file \"%s\"\n", url.data());
+
+				if (is_debugging_updater)
+					console::debug("[HTTP] GET file \"%s\"\n", url.data());
+
 				const auto result = utils::http::get_data(url);
 				return result;
 			};
@@ -268,7 +273,8 @@ namespace updater
 
 		std::vector<file_info> get_file_list()
 		{
-			console::info("[Updater] Downloading file list\n");
+			if (is_debugging_updater)
+				console::info("[Updater] Downloading file list\n");
 
 			const auto list = download_file_list();
 			if (!list.has_value())
@@ -305,7 +311,8 @@ namespace updater
 				}
 #endif
 
-				console::info("[Updater] Add file \"%s\"\n", name);
+				if (is_debugging_updater)
+					console::debug("[Updater] Add file \"%s\"\n", name);
 
 				parsed_list.emplace_back(name, sha);
 			}
@@ -370,7 +377,9 @@ namespace updater
 				const auto file_ = std::string(file.begin() + appdata_folder.generic_string().size() + 1, file.end());
 				if (!found && std::filesystem::is_regular_file(file) && !is_ignore_file(file_))
 				{
-					console::info("[Updater] Deleting extra file %s\n", file.data());
+					if (is_debugging_updater)
+						console::info("[Updater] Deleting extra file %s\n", file.data());
+
 					utils::io::remove_file(file);
 				}
 			}
@@ -378,10 +387,12 @@ namespace updater
 		
 		void run_update()
 		{
+			console::redudant("[Updater] Checking for updates... (this may take a few seconds)");
+
 			const auto file_list = get_file_list();
 			if (file_list.empty())
 			{
-				console::info("[Updater] Update aborted\n");
+				console::warn("[Updater] Update aborted\n");
 				return;
 			}
 
@@ -418,6 +429,7 @@ namespace updater
 
 			if (download_threads.size() == 0)
 			{
+				console::redudant("[Updater] Update check complete");
 				return;
 			}
 
@@ -431,7 +443,7 @@ namespace updater
 
 			if (download_failed)
 			{
-				console::info("[Updater] Update aborted\n");
+				console::warn("[Updater] Update aborted\n");
 				return;
 			}
 
@@ -461,7 +473,7 @@ namespace updater
 			{
 				if (!utils::flags::has_flag("update-only"))
 				{
-					console::info("[Updater] Restarting\n");
+					console::important("[Updater] Restarting\n");
 					utils::nt::relaunch_self();
 				}
 
@@ -480,6 +492,8 @@ namespace updater
 			if (!utils::flags::has_flag("noupdate"))
 			{
 				run_update();
+
+				is_debugging_updater = utils::flags::has_flag("debugupdate");
 			}
 		}
 
@@ -490,6 +504,4 @@ namespace updater
 	};
 }
 
-#if GIT_DIRTY == 0
 REGISTER_COMPONENT(updater::component)
-#endif

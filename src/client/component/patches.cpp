@@ -3,6 +3,7 @@
 
 #include "game/game.hpp"
 #include "game/dvars.hpp"
+#include "command.hpp"
 
 #include "fastfiles.hpp"
 #include "filesystem.hpp"
@@ -43,11 +44,11 @@ namespace patches
 
 			if (game::environment::is_dedi())
 			{
-				com_maxfps = game::Dvar_RegisterInt("com_maxfps", 85, 0, 100, game::DVAR_FLAG_NONE, "Cap frames per second");
+				com_maxfps = game::Dvar_RegisterInt("com_maxfps", 250, 0, 250, game::DVAR_FLAG_NONE, "Cap frames per second");
 			}
 			else
 			{
-				com_maxfps = game::Dvar_RegisterInt("com_maxfps", 0, 0, 1000, game::DVAR_FLAG_SAVED, "Cap frames per second");
+				com_maxfps = game::Dvar_RegisterInt("com_maxfps", 0, 0, 250, game::DVAR_FLAG_SAVED, "Cap frames per second");
 			}
 
 			*reinterpret_cast<game::dvar_t**>(0x146005758) = com_maxfps;
@@ -73,7 +74,8 @@ namespace patches
 
 		const char* live_get_local_client_name()
 		{
-			return game::Dvar_FindVar("name")->current.string;
+			static const auto* name = game::Dvar_FindVar("name");
+			return name != nullptr ? name->current.string : "Unknown Soldier";
 		}
 
 		std::vector<std::string> dvar_save_variables;
@@ -190,22 +192,17 @@ namespace patches
 			return true;
 		}
 
-		char* db_read_raw_file_stub(const char* filename, char* buf, const int size)
+		utils::hook::detour db_read_raw_file_hook;
+		const char* db_read_raw_file_stub(const char* filename, char* buf, const int size)
 		{
-			std::string file_name = filename;
-			if (file_name.find(".cfg") == std::string::npos)
-			{
-				file_name.append(".cfg");
-			}
-
 			std::string buffer{};
-			if (filesystem::read_file(file_name, &buffer))
+			if (filesystem::read_file(filename, &buffer))
 			{
 				snprintf(buf, size, "%s\n", buffer.data());
 				return buf;
 			}
 
-			return game::DB_ReadRawFile(filename, buf, size);
+			return db_read_raw_file_hook.invoke<const char*>(filename, buf, size);
 		}
 
 		void cbuf_execute_buffer_internal_stub(int local_client_num, int controller_index, char* buffer, [[maybe_unused]]void* callback)
@@ -246,6 +243,133 @@ namespace patches
 				a.jmp(0x140B22287);
 			});
 		}
+
+		void request_start_match(game::PartyData* party, bool/* skip_start_countdown*/)
+		{
+			utils::hook::invoke<void>(0x1409D8900, party, true); // PartyHost_RequestStartMatch
+		}
+
+		void dvar_set_command_stub(const char* name, const char* value, bool superuser)
+		{
+			// party_maxplayers is the true max clients value
+			if (!strcmp(name, "sv_maxclients"))
+				name = "party_maxplayers";
+
+			utils::hook::invoke<void>(0x140CECB30, name, value, superuser);
+		}
+
+		utils::hook::detour cmd_lui_notify_server_hook;
+		void cmd_lui_notify_server_stub(game::gentity_s* ent)
+		{
+			const auto svs_clients = *game::svs_clients;
+			if (svs_clients == nullptr)
+			{
+				return;
+			}
+
+			command::params_sv params{};
+			const auto menu_id = atoi(params.get(1));
+			const auto client = &svs_clients[ent->s.number];
+
+			if (client == nullptr)
+			{
+				return;
+			}
+
+			//// 161 => "end_game"
+			if (menu_id == 161 && client->remoteAddress.type != game::NA_LOOPBACK)
+			{
+				game::SV_DropClient(client, "PLATFORM_STEAM_KICK_CHEAT", true);
+				return;
+			}
+
+			cmd_lui_notify_server_hook.invoke<void>(ent);
+		}
+
+		constexpr auto high_byte(std::uint64_t l)
+		{
+			return static_cast<std::uint8_t>((l >> 24) & 0xFF);
+		}
+
+		// Stop Server Crash from CL_NetChan_Transmit
+		utils::hook::detour msg_readlong_hook;
+		__int64 msg_readlong_stub(game::msg_t* msg)
+		{
+			void* retAddr = (void*)_ReturnAddress();
+
+			if (retAddr == (void*)0x140C59438)
+			{
+				__int64 reliable_acknowledge = msg_readlong_hook.invoke<__int64>(msg);
+
+				if (high_byte(static_cast<std::uint64_t>(reliable_acknowledge)) > 0x7F)
+				{
+					return 0;
+				}
+				return reliable_acknowledge;
+			}
+
+			return msg_readlong_hook.invoke<__int64>(msg);
+		}
+		
+		void op_wait_entry_stub(utils::hook::assembler& a)
+		{
+			const auto handle_float = a.newLabel();
+			const auto handle_int = a.newLabel();
+			const auto finish_wait = a.newLabel();
+			const auto script_error = a.newLabel();
+
+			a.mov(eax, dword_ptr(rbx, 8)); // Type? Float = 5 | Int = 6
+			a.cmp(eax, 5);
+			a.je(handle_float);
+			a.cmp(eax, 6);
+			a.je(handle_int);
+
+			a.jmp(0x140C0EA73); // Default error path
+
+			a.bind(handle_float);
+			a.movss(xmm1, dword_ptr(rbx)); // Load the float scalar-wise from rbx
+ 
+			// x20 scaling - avoid relying on xmm7/xmm8 - could change?
+			const auto l_20 = a.newLabel();
+			const auto l_05 = a.newLabel();
+			a.mulss(xmm1, ptr(l_20));
+			a.addss(xmm1, ptr(l_05));
+			a.cvttss2si(edi, xmm1);	// Round to an int
+			a.jmp(finish_wait);
+
+			a.bind(l_20);
+			a.embedFloat(20.0f);
+			a.bind(l_05);
+			a.embedFloat(0.5f);
+
+			// Check for negative result (LABEL_258 check)
+			a.test(edi, edi);
+			a.js(script_error);
+			a.jmp(finish_wait);
+
+			a.bind(handle_int);
+			a.mov(eax, dword_ptr(rbx));	// Load int
+			a.imul(eax, eax, 20); // ticks = secs * 20
+			a.mov(edi, eax);
+
+			a.test(edi, edi); // sign-check for integers
+			a.js(script_error);
+
+			// Ensure edi (v174) is at least 1 if original float wasn't 0.0
+			a.bind(finish_wait);
+			const auto not_zero = a.newLabel();
+			a.test(edi, edi);
+			a.jnz(not_zero);
+			a.mov(edi, 1);
+			a.bind(not_zero);
+
+			// Save the result
+			a.mov(dword_ptr(rsp, 0x440 - 0x3FC), edi);
+			a.jmp(0x140C0EA92);
+
+			a.bind(script_error);
+			a.jmp(0x140C0EB63);
+		}
 	}
 
 	class component final : public component_interface
@@ -253,6 +377,10 @@ namespace patches
 	public:
 		void post_unpack() override
 		{
+			utils::hook::jump(0x140C0E9F5, utils::hook::assemble(op_wait_entry_stub), true);
+
+			msg_readlong_hook.create(0x140BB37D0, msg_readlong_stub);
+
 			// register custom dvars
 			com_register_common_dvars_hook.create(0x140BADF30, com_register_common_dvars_stub);
 
@@ -282,8 +410,9 @@ namespace patches
 			utils::hook::set<uint8_t>(0x140B0A9AC, 0xEB); // setclientdvar
 			utils::hook::set<uint8_t>(0x140B0ACC8, 0xEB); // setclientdvars
 
-			// Allow executing custom cfg files with the "exec" command
-			utils::hook::call(0x140B7CEF9, db_read_raw_file_stub);
+			// Allow loading of rawfiles from disk
+			db_read_raw_file_hook.create(game::DB_ReadRawFile, db_read_raw_file_stub);
+
 			// Add cheat override to exec
 			utils::hook::call(0x140B7CF11, cbuf_execute_buffer_internal_stub);
 
@@ -354,6 +483,19 @@ namespace patches
 			// Patch crash caused by the server trying to kick players for 'invalid password'
 			utils::hook::nop(0x140B2215B, 18);
 			utils::hook::jump(0x140B2215B, update_last_seen_players_stub(), true);
+
+			// Start match without the timer
+			utils::hook::jump(0x1409AA7F5, request_start_match);
+
+			// register bot difficulty script dvars
+			game::Dvar_RegisterInt("bot_difficulty_allies", 0, 0, 4, game::DVAR_FLAG_NONE, "Bot difficulty for friendly bots. 0: Mixed, 1: Recruit, 2: Regular, 3: Hardened, 4: Veteran");
+			game::Dvar_RegisterInt("bot_difficulty_enemies", 0, 0, 4, game::DVAR_FLAG_NONE, "Bot difficulty for enemy bots. 0: Mixed, 1: Recruit, 2: Regular, 3: Hardened, 4: Veteran");
+		
+			// re-direct some dvars to others for backwards compatibility on configurations
+			utils::hook::call(0x140BB241C, dvar_set_command_stub);
+
+			// disable the cipher code as its not working
+			game::Dvar_RegisterBool("online_qrm5tr_cipher_enabled", false, game::DVAR_FLAG_READ, "Is the cipher available in the Quartermaster");
 		}
 	};
 }

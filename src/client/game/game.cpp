@@ -39,7 +39,7 @@ namespace game
 			const auto sv_cheats = game::Dvar_FindVar("sv_cheats");
 			if (!sv_cheats || !sv_cheats->current.enabled)
 			{
-				if(print)
+				if (print)
 					client_println(client_num, "GAME_CHEATSNOTENABLED");
 				return false;
 			}
@@ -232,7 +232,7 @@ namespace game
 
 	void G_LogPrintf(const char* fmt, ...)
 	{
-		if (!dvars::logfile->current.enabled)
+		if (!dvars::g_log || !dvars::logfile || !dvars::logfile->current.enabled)
 		{
 			return;
 		}

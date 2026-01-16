@@ -188,6 +188,7 @@ namespace game
 
 	WEAK symbol<void(netadr_s*, sockaddr*)> NetadrToSockadr{ 0x140CE6B90 };
 	WEAK symbol<void(netsrc_t, netadr_s*, const char*)> NET_OutOfBandPrint{ 0x140BB4EE0 };
+	WEAK symbol<void(netsrc_t, netadr_s*, char*, int)> NET_OutOfBandData{ 0x140BB4E00 };
 	WEAK symbol<void(netsrc_t sock, int length, const void* data, const netadr_s* to)> NET_SendLoopPacket{ 0x140BB50A0 };
 	WEAK symbol<bool(const char* s, netadr_s* a)> NET_StringToAdr{ 0x140BB5180 };
 	WEAK symbol<int(netadr_s a, netadr_s b)> NET_CompareAdr{ 0x140BB49B0 };
@@ -218,8 +219,6 @@ namespace game
 
 	WEAK symbol<std::uint64_t(const void* session, const int clientNum)> Session_GetXuid{ 0x140C72AB0 };
 	WEAK symbol<bool(const SessionData* session, const int memberIndex)> Session_IsHost{ 0x140D9B470 };
-
-	WEAK symbol<int(const char* str, std::uint64_t* xuid)> StringToXUID{ 0x140CE6C40 };
 
 	WEAK symbol<char* ()> Sys_Cwd{ 0x140CFE5A0 };
 	
@@ -280,6 +279,7 @@ namespace game
 	WEAK symbol<void()> SV_CmdsMP_CheckLoadGame{ 0x140C4C9E0 };
 	WEAK symbol<void()> SV_CmdsSP_MapRestart_f{ 0x140C12B30 };
 	WEAK symbol<void()> SV_CmdsSP_FastRestart_f{ 0x140C12AF0 };
+	WEAK symbol<void(netadr_s* from)> SV_ClientMP_DirectConnect{ 0x140C4EBD0 };
 	WEAK symbol<int (int clientNum)> SV_ClientMP_GetClientPing{ 0x140C507D0 };
 	WEAK symbol<char* (int entNum)> SV_GameMP_GetGuid{ 0x140C12410 };
 	WEAK symbol<int ()> SV_GameMP_GetAgentCount{ 0x140C124A0 };
@@ -319,14 +319,31 @@ namespace game
 
 	WEAK symbol<float(XAnim_s* anims, unsigned int anim)> XAnimGetLengthMsec{ 0x140D761C0 };
 
+	WEAK symbol<int(const char* str, std::uint64_t* xuid)> StringToXUID{ 0x140CE6C40 };
+	WEAK symbol<void(std::uint64_t* xuid, const char* buffer)> XUIDToString{ 0x140CE6E90 };
+
 	WEAK symbol<void* (jmp_buf* Buf, int Value)> longjmp{ 0x1412C0758 };
 	WEAK symbol<int(jmp_buf* Buf)> _setjmp{ 0x141423110 };
 
 	WEAK symbol<void(float* angles, float* forward, float* right, float* up)> AngleVectors{ 0x140CE6080 };
+	
+	WEAK symbol<char*(char* dest, const char* src, int dest_size)> I_strncpyz{0x1412C3560};
+	
+	WEAK symbol<const char*(const int zoneIndex)> DB_Zones_GetZoneNameFromIndex{0x1403BC410};
+	WEAK symbol<bool(const int zoneIndex)> DB_Zones_IsValidZoneIndex{0x1403BC730};
+	
+	WEAK symbol<DB_AssetEntry*(void* this_, const char* name, XAssetType type)> DB_AssetEntryTable_FindAsset{0x1403B57F0};
+	WEAK symbol<void(msg_t* msg, char* data, std::int32_t length)> MSG_Init{ 0x140BB2F60 };
+	WEAK symbol<void(msg_t* msg, std::string data)> MSG_WriteString{ 0x140BB4620 };
+	WEAK symbol<void(msg_t* msg, const void* data, std::int32_t length)> MSG_WriteData{ 0x140BB4340 };
+	WEAK symbol<void(msg_t* msg, std::int32_t data)> MSG_WriteByte{ 0x140BB4320 };
+	WEAK symbol<void(msg_t* msg, std::uint64_t data)> MSG_WriteInt64{ 0x140BB4570 };
 
 	/***************************************************************
 	 * Variables
 	 **************************************************************/
+	
+	WEAK symbol<__int64> s_assetManager_table{0x1453E7370};
 
 	WEAK symbol<int> g_script_error_level{ 0x146B16298 };
 	WEAK symbol<jmp_buf> g_script_error{ 0x146B162A0 };

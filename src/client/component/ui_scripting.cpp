@@ -34,7 +34,7 @@ namespace ui_scripting
 	{
 		int64_t is_development_build_stub([[maybe_unused]] game::hks::lua_State* luaVM)
 		{
-#if defined(DEV_BUILD) || defined(DEBUG)
+#if defined(DEBUG)
 			ui_scripting::push_value(true);
 #else
 			ui_scripting::push_value(false);
@@ -197,13 +197,15 @@ namespace ui_scripting
 			auto scheduler = table();
 			lua["scheduler"] = scheduler;
 
-			scheduler["once"] = [](const function_argument& args)
+			scheduler["once"] = [](const function_argument& arg0, const variadic_args& va)
 			{
-				scheduler::once([args]()
+				int delay = va.size() >= 1 ? va[0].as<int>() : 0;
+
+				scheduler::once([arg0, delay]()
 				{
-					auto func = args.as<function>();
+					auto func = arg0.as<function>();
 					func();
-				}, scheduler::lui);
+				}, scheduler::lui, std::chrono::milliseconds(delay));
 			};
 
 			auto server_list_table = table();
@@ -450,6 +452,8 @@ namespace ui_scripting
 
 			// replace LUA engine calls
 			utils::hook::set(0x1414B4D98, lua_calls::is_development_build_stub); // IsDevelopmentBuild
+
+			game::Dvar_RegisterBool("ui_showList", false, game::DVAR_FLAG_SAVED, "Show the current menus on the UI stack");
 		}
 	};
 }

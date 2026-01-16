@@ -14,8 +14,6 @@
 #include <utils/concurrency.hpp>
 #include <utils/io.hpp>
 
-#include <zlib.h>
-
 //#define XFILE_DEBUG
 
 namespace fastfiles
@@ -242,7 +240,7 @@ namespace fastfiles
 
 			if (!strncmp(zone_name, buffer, len))
 			{
-				printf("Tried to load missing language zone: %s\n", zone_name);
+				console::warn("Tried to load missing language zone: %s\n", zone_name);
 				return true;
 			}
 
@@ -296,6 +294,7 @@ namespace fastfiles
 
 		return false;
 	}
+	
 
 	class component final : public component_interface
 	{

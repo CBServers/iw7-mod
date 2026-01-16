@@ -1,7 +1,7 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
 
-#include "console/console.hpp"
+#include "component/console/console.hpp"
 #include "component/scheduler.hpp"
 #include "component/gsc/script_extension.hpp"
 

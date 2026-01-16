@@ -152,19 +152,6 @@ namespace io
 				const auto path = convert_path(args[0].as<std::string>());
 				return utils::io::remove_file(path);
 			});
-
-			gsc::function::add("va", [](const gsc::function_args& args)
-			{
-				auto fmt = args[0].as<std::string>();
-
-				for (auto i = 1u; i < args.size(); i++)
-				{
-					const auto arg = args[i].to_string();
-					replace(fmt, "%s", arg);
-				}
-
-				return fmt;
-			});
 		}
 	};
 }

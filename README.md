@@ -1,14 +1,13 @@
-![license](https://img.shields.io/github/license/h1-mod/iw7-mod.svg)
-[![open bugs](https://img.shields.io/github/issues/h1-mod/iw7-mod/bug?label=bugs)](https://github.com/h1-mod/iw7-mod/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
-[![discord](https://img.shields.io/discord/945420505157083208?color=%237289DA&label=members&logo=discord&logoColor=%23FFFFFF)](https://discord.gg/RzzXu5EVnh)
-<!--
-[![Build](https://github.com/h1-mod/h1-mod/workflows/Build/badge.svg)](https://github.com/h1-mod/h1-mod/actions)
-[![Build status](https://ci.appveyor.com/api/projects/status/0sh80kdnsvm53rno?svg=true)](https://ci.appveyor.com/project/h1-mod/h1-mod)
--->
-
 # IW7-Mod
 
-IW7-Mod is a client for Call of Duty®: Infinite Warfare that adds dedicated servers, hands-on modding utilities, and custom mods that feature content like weapons, models, sounds, and more. ***You must legally own [Call of Duty®: Infinite Warfare](https://store.steampowered.com/app/292730/Call_of_Duty_Infinite_Warfare/)*** to run this mod. Unlicensed or cracked versions of the game are **NOT** supported and will not be given assistance.
+This is a client modification for IW7!  
+Developed by [Aurora](https://auroramod.dev/).  
+This is a fork of [IW7-Mod](https://github.com/auroramod/iw7-mod) with added CB patches.  
+Big thanks to all the contributors.              
+Join us on [Discord](https://cbservers.xyz/discord) for support.  
+Follow the original project on [GitHub](https://github.com/auroramod).  
+
+NOTE: This fork is not affiliated or endorsed by Aurora. Please do not bug original client maintainers with support requests in regards to this fork.
 
 <p align="center">
   <img src="assets/github/banner.png?raw=true" width="500" height="500" />
@@ -16,7 +15,8 @@ IW7-Mod is a client for Call of Duty®: Infinite Warfare that adds dedicated ser
 
 ## Download
 
-To download IW7-Mod, [read our Installing IW7-Mod guide](https://docs.auroramod.dev/iw7-install) to help you.
+- **[Click here to get the latest release](https://github.com/CBServers/updater/raw/main/updater/iw7-mod/data/iw7-mod.exe)**
+- **You will need to drop this in your Call of Duty: Infinite Warfare folder.** If you don't have Infinite Warfare, get those game files first. Either from Steam or from our [launcher](https://cbservers.xyz/launcher).
 
 ## Compile from source code
 

@@ -43,8 +43,9 @@ namespace steam_proxy
 
 		bool is_disabled()
 		{
-			static const auto disabled = utils::flags::has_flag("nosteam"); // fixes issues for offline Steam play
-			return disabled;
+			//static const auto disabled = utils::flags::has_flag("nosteam"); // fixes issues for offline Steam play
+			//return disabled;
+			return true;
 		}
 
 		void* load_client_engine()

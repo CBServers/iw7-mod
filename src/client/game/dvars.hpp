@@ -43,6 +43,8 @@ namespace dvars
 
 	extern game::dvar_t* jump_enableFallDamage;
 
+	extern game::dvar_t* map_start_fix;
+
 	std::string dvar_get_vector_domain(const int components, const game::DvarLimits& domain);
 	std::string dvar_get_domain(const game::DvarType type, const game::DvarLimits& domain);
 	std::string dvar_get_name(const game::dvar_t* dvar);

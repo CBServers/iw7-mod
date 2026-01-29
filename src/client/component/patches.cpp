@@ -8,6 +8,7 @@
 #include "fastfiles.hpp"
 #include "filesystem.hpp"
 #include "dvars.hpp"
+#include "scheduler.hpp"
 
 #include "component/console/console.hpp"
 
@@ -239,7 +240,19 @@ namespace patches
 
 		void request_start_match(game::PartyData* party, bool/* skip_start_countdown*/)
 		{
-			utils::hook::invoke<void>(0x1409D8900, party, true); // PartyHost_RequestStartMatch
+			if (dvars::map_start_fix && dvars::map_start_fix->current.enabled)
+			{
+				// Scuffed patch for maps not starting for some (just force it)
+				scheduler::once([]()
+				{
+					auto* mapname = game::Dvar_FindVar("ui_mapname");
+					command::execute(utils::string::va("map %s", mapname->current.string), false);
+				}, scheduler::pipeline::main, 1s);
+			}
+			else
+			{
+				utils::hook::invoke<void>(0x1409D8900, party, true); // PartyHost_RequestStartMatch
+			}
 		}
 
 		void dvar_set_command_stub(const char* name, const char* value, bool superuser)
@@ -479,8 +492,9 @@ namespace patches
 			//utils::hook::nop(0x140B2215B, 18);
 			//utils::hook::jump(0x140B2215B, update_last_seen_players_stub(), true);
 
-			// Start match without the timer
+			// Start match without the timer + scuffed map start fix
 			utils::hook::jump(0x1409AA7F5, request_start_match);
+			dvars::map_start_fix = game::Dvar_RegisterBool("map_start_fix", false, game::DVAR_FLAG_SAVED, "Enable if experiencing black screen or stalls on map starts");
 
 			// register bot difficulty script dvars
 			game::Dvar_RegisterInt("bot_difficulty_allies", 0, 0, 4, game::DVAR_FLAG_NONE, "Bot difficulty for friendly bots. 0: Mixed, 1: Recruit, 2: Regular, 3: Hardened, 4: Veteran");

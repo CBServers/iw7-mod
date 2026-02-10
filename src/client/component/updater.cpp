@@ -155,7 +155,8 @@ namespace updater
 			return name;
 		}
 
-		std::optional<std::string> get_server_file(const std::string& endpoint)
+		std::optional<std::string> get_server_file(const std::string& endpoint,
+			const std::function<int(size_t, size_t)>& callback = {})
 		{
 			static std::vector<std::string> server_urls =
 			{
@@ -170,7 +171,7 @@ namespace updater
 				if (is_debugging_updater)
 					console::debug("[HTTP] GET file \"%s\"\n", url.data());
 
-				const auto result = utils::http::get_data(url);
+				const auto result = utils::http::get_data(url, {}, {}, callback);
 				return result;
 			};
 
@@ -265,10 +266,11 @@ namespace updater
 			return updater::get_server_file(file);
 		}
 
-		std::optional<std::string> download_data_file(const std::string& name)
+		std::optional<std::string> download_data_file(const std::string& name,
+			const std::function<int(size_t, size_t)>& callback = {})
 		{
 			const auto file = format_url(std::format("{}{}", select(DATA_PATH, DATA_PATH_DEV), name));
-			return updater::get_server_file(file);
+			return updater::get_server_file(file, callback);
 		}
 
 		std::vector<file_info> get_file_list()
@@ -325,7 +327,25 @@ namespace updater
 			return std::thread([=]
 			{
 				console::info("[Updater] Downloading file \"%s\"\n", file.name.data());
-				const auto data = download_data_file(file.name);
+
+				int last_printed = -1;
+				const auto progress = [file, &last_printed](size_t total, size_t now) -> int
+				{
+					if (total > 0)
+					{
+						const auto pct = static_cast<int>((static_cast<double>(now) / total) * 100.0);
+						if (pct / 5 != last_printed / 5)
+						{
+							last_printed = pct;
+							console::info("[Updater] Downloading file %s: %.1f%%\n",
+								file.name.data(),
+								(static_cast<double>(now) / total) * 100.0);
+						}
+					}
+					return 0;
+				};
+
+				const auto data = download_data_file(file.name, progress);
 
 				if (!data.has_value())
 				{

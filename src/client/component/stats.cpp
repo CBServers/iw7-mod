@@ -21,6 +21,8 @@ namespace stats
 		utils::hook::detour item_quantity_hook;
 
 		game::dvar_t* cg_loot_count = nullptr;
+		game::dvar_t* director_cut_dvar = nullptr;
+		game::dvar_t* cg_unlimited_cards = nullptr;
 
 		bool is_item_unlocked_stub(__int64 a1, int a2, const char* unlock_table, unsigned __int8* value)
 		{
@@ -45,6 +47,11 @@ namespace stats
 		int item_quantity_stub(__int64 a1, int a2, int id)
 		{
 			auto result = item_quantity_hook.invoke<int>(a1, a2, id);
+
+			if (id >= 170013 && id <= 170061 && cg_unlimited_cards && cg_unlimited_cards->current.enabled)
+			{
+				return 999;
+			}
 
 			// 30000 crashes
 			if (id != 30000 && dvars::cg_unlockall_loot && dvars::cg_unlockall_loot->current.enabled)
@@ -124,7 +131,6 @@ namespace stats
 			command::execute("setRankedPlayerData progression playerLevel prestige 30", true);
 
 			command::execute("setCoopPlayerData progression playerLevel xp 95297348", true);
-			command::execute("setCoopPlayerData progression playerLevel prestige 20", true);
 
 			// weapon experience
 			command::execute("setCommonPlayerData sharedProgression weaponLevel iw7_nrg mpXP 54299", true);
@@ -320,27 +326,6 @@ namespace stats
 			command::execute("uploadstats", true); // needed to update stats i think
 			console::debug("unlocked all easter egg stats!\n");
 		}
-
-		void director_cut(const command::params& params)
-		{
-			if (!can_run_command())
-			{
-				return;
-			}
-
-			if (params.size() < 2)
-			{
-				console::info("usage: \"/director_cut 0/1\"\n");
-				return;
-			}
-
-			const auto is_enabled = params.get(1);
-			command::execute(utils::string::va("setCoopPlayerData dc %s", is_enabled), true);
-			command::execute(utils::string::va("setCoopPlayerData dc_available %s", is_enabled), true);
-
-			command::execute("uploadstats", true); // needed to update stats i think
-			console::debug("directors cut set to %s\n", is_enabled);
-		}
 	}
 
 	class component final : public component_interface
@@ -354,7 +339,15 @@ namespace stats
 				command::add("unlockall", unlock_stats);
 				command::add("unlockstatsEE", unlock_stats_ee);
 				command::add("unlockallEE", unlock_stats_ee);
-				command::add("director_cut", director_cut);
+
+				director_cut_dvar = game::Dvar_RegisterBool("director_cut", false, game::DVAR_FLAG_SAVED, "Whether the Directors Cut features and perks should be enabled or disabled.");
+				dvars::callback::on_new_value("director_cut", [](game::DvarValue* value)
+				{
+					const auto is_enabled = value->integer;
+					command::execute(utils::string::va("setCoopPlayerData dc %d", is_enabled), true);
+					command::execute(utils::string::va("setCoopPlayerData dc_available %d", is_enabled), true);
+					command::execute("uploadstats", true);
+				});
 			}
 
 			// register dvars
@@ -372,6 +365,7 @@ namespace stats
 			dvars::cg_unlockall_loot = game::Dvar_RegisterBool("cg_unlockall_loot", default_value, default_flag, "Whether loot should be locked based on the player's stats or always unlocked.");
 
 			cg_loot_count = game::Dvar_RegisterInt("cg_loot_count", 1, 1, 99999, game::DVAR_FLAG_SAVED, "Amount of loot to give for items");
+			cg_unlimited_cards = game::Dvar_RegisterBool("cg_unlimited_cards", default_value, default_flag, "Whether Fortune Cards should be unlimited.");
 
 			// unlockables
 			is_item_unlocked_hook.create(0x14034E020, is_item_unlocked_stub);

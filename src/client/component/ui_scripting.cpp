@@ -183,6 +183,26 @@ namespace ui_scripting
 			};
 			*/
 
+			game_type["getplayerclantag"] = [](const game&, const int& clientIndex)
+			{
+				if (clientIndex < 18)
+				{
+					auto lobbyMember = &party::g_clientMemberInfo[clientIndex];
+					auto lobbyMemberValid = &party::g_clientMemberInfoValid[clientIndex];
+
+					if (!lobbyMember || !lobbyMemberValid)return "";
+
+					auto lobbyMemberClanAbbrev = lobbyMember->clanTag.c_str();
+
+					if (!lobbyMemberClanAbbrev || !*lobbyMemberClanAbbrev)
+						return "";
+
+					return (const char*)lobbyMemberClanAbbrev;
+				}
+
+				return "";
+			};
+
 			game_type["getcurrentgamelanguage"] = [](const game&)
 			{
 				return steam::SteamApps()->GetCurrentGameLanguage();

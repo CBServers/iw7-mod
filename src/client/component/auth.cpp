@@ -185,6 +185,8 @@ namespace auth
 			info_string.set("password", password && password->current.string && password->current.string[0] != '\0' ? 
 				password->current.string : "0");
 
+			info_string.set("clanAbbrev", game::GamerProfile_GetClanName(0));
+
 			connect_string.clear();
 			connect_string.append(params[0]);
 			connect_string.append(" ");
@@ -229,7 +231,6 @@ namespace auth
 			}
 
 			game::SV_ClientMP_DirectConnect(from);
-
 		}
 
 		void* get_direct_connect_stub()
@@ -272,6 +273,13 @@ namespace auth
 		return info_value_for_key_hook.invoke<char*>(s, key);
 	}
 
+	void patch_info_string(char* s, const char* key, const char* value)
+	{
+		auto clanName = game::GamerProfile_GetClanName(0);
+		utils::hook::invoke<void>(0x140CFB600, s, "clanAbbrev", clanName);
+		utils::hook::invoke<void>(0x140CFB600, s, key, value);
+	}
+
 	class component final : public component_interface
 	{
 	public:
@@ -310,6 +318,8 @@ namespace auth
 			{
 				utils::hook::jump(patch.first, patch.second);
 			}
+
+			utils::hook::call(0x1409B28DD, patch_info_string);
 
 			utils::hook::jump(0x140C58933, get_direct_connect_stub(), true);
 			utils::hook::call(0x1409AADFD, send_connect_data);

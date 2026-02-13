@@ -176,16 +176,15 @@ namespace auth
 
 			utils::info_string info_string{ std::string{params[2]} };
 
-			//char xuidStr[32]{};
-			//std::uint64_t xuid = steam::SteamUser()->GetSteamID().bits;
-			//game::XUIDToString(&xuid, xuidStr);
-			//info_string.set("xuid", xuidStr);
-
 			game::dvar_t* password = game::Dvar_FindVar("password");
 			info_string.set("password", password && password->current.string && password->current.string[0] != '\0' ? 
 				password->current.string : "0");
 
-			info_string.set("clanAbbrev", game::GamerProfile_GetClanName(0));
+			auto clanAbbrev = game::GamerProfile_GetClanName(0);
+			if (clanAbbrev && *clanAbbrev)
+			{
+				info_string.set("clanAbbrev", clanAbbrev);
+			}
 
 			connect_string.clear();
 			connect_string.append(params[0]);

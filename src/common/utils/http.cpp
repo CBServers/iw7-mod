@@ -1,6 +1,5 @@
 #include "http.hpp"
 #include "nt.hpp"
-#include <atlcomcli.h>
 
 namespace utils::http
 {

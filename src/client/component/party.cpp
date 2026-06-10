@@ -1041,6 +1041,7 @@ namespace party
 				info.set("sv_running", utils::string::va("%i", get_dvar_bool("sv_running") && !game::Com_FrontEndScene_IsActive()));
 				info.set("dedicated", utils::string::va("%i", get_dvar_bool("dedicated")));
 				info.set("privatematch", utils::string::va("%i", get_dvar_bool("xblive_privatematch")));
+				info.set("joinable", (game::environment::is_dedi() || get_dvar_bool("nat_open")) ? "1" : "0");
 				info.set("sv_wwwBaseUrl", get_dvar_string("sv_wwwBaseUrl"));
 				info.set("sv_discordImageUrl", get_dvar_string("sv_discordImageUrl"));
 				info.set("sv_discordImageText", get_dvar_string("sv_discordImageText"));
@@ -1199,6 +1200,14 @@ namespace party
 				if (!sv_maxclients)
 				{
 					info_response_error("Connection failed: Invalid sv_maxclients.");
+					return;
+				}
+
+				// Only block when explicitly closed ("0"); a missing field stays joinable
+				// (dedis / older builds / other forks unaffected).
+				if (info.get("joinable") == "0"s)
+				{
+					info_response_error("This match is not open to joining. Ask the host to open it from the pause menu.");
 					return;
 				}
 

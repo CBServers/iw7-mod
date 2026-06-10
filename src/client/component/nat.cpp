@@ -314,6 +314,13 @@ namespace nat
 				game::Dvar_SetBool(nat_open_dvar, enabled);
 			}
 
+			// Disable host pause while open: a paused listen-server host blocks joins
+			// (XBOXLIVE_CANTJOINSESSION_HOST_PAUSED). Restore it when closing.
+			if (auto* pause_dvar = game::Dvar_FindVar("allow_local_host_pause"))
+			{
+				game::Dvar_SetInt(pause_dvar, enabled ? 0 : 1);
+			}
+
 			if (!enabled)
 			{
 				host_token.clear();

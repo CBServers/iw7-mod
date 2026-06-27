@@ -50,4 +50,7 @@ namespace party
 
 	unsigned int get_client_count();
 	unsigned int get_bot_count();
+
+	// The connected server's host name, only when it's a public dedicated server; empty otherwise.
+	std::string get_public_server_name();
 }

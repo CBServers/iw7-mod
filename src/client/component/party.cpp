@@ -708,6 +708,32 @@ namespace party
 		return server_discord_info;
 	}
 
+	std::string get_public_server_name()
+	{
+		// Public dedicated only: in-game client, not hosting, not a private match, connected to a public IP.
+		if (!game::CL_IsGameClientActive(0) || game::Com_FrontEndScene_IsActive())
+		{
+			return {};
+		}
+
+		if (game::SV_Loaded())
+		{
+			return {}; // we're the (listen-server) host
+		}
+
+		if (get_dvar_bool("xblive_privatematch"))
+		{
+			return {};
+		}
+
+		if (!network::is_valid_public_ip(server_connection_state.host))
+		{
+			return {};
+		}
+
+		return server_connection_state.hostname;
+	}
+
 	static int find_client_num_by_adr(const game::netadr_s& from)
 	{ 
 		for (unsigned int i = 0; i < *game::svs_numclients; i++) 
@@ -1167,10 +1193,20 @@ namespace party
 					return;
 				}
 
-				const auto playmode = info.get("playmode");
-				if (game::GameModeType(std::atoi(playmode.data())) != game::Com_GameMode_GetActiveGameMode())
+				const auto target_mode = game::GameModeType(std::atoi(info.get("playmode").data()));
+				if (target_mode != game::Com_GameMode_GetActiveGameMode())
 				{
-					info_response_error("Connection failed: Invalid playmode.");
+					// iw7 is one binary but `connect` can't cross play modes; tell the user which to switch to.
+					if (target_mode == game::GAME_MODE_MP || target_mode == game::GAME_MODE_CP)
+					{
+						info_response_error(utils::string::va(
+							"Invalid playmode. Switch to %s to join this server.",
+							game::G_GAME_MODE_STRINGS_FORMATTED[target_mode]));
+					}
+					else
+					{
+						info_response_error("Connection failed: Invalid playmode.");
+					}
 					return;
 				}
 

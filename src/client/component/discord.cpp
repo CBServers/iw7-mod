@@ -703,16 +703,20 @@ namespace discord
 			                 : truncate(utils::string::strip(game::UI_GetGameTypeDisplayName(gametype.data())), 128);
 		state.server_name = truncate(utils::string::strip(party::get_public_server_name()), 128);
 
-		state.players = *reinterpret_cast<int*>(0x14434FEF0); // numClients from snapshot
+		// Player counts only make sense outside SP (the snapshot global is stale there).
+		if (state.mode != "sp")
+		{
+			state.players = *reinterpret_cast<int*>(0x14434FEF0); // numClients from snapshot
 
-		const auto* max_clients_dvar = game::Dvar_FindVar("ui_maxclients");
-		if (game::SV_Loaded() && !game::Com_FrontEnd_IsInFrontEnd())
-		{
-			state.max_players = max_clients_dvar ? max_clients_dvar->current.integer : 0;
-		}
-		else
-		{
-			state.max_players = party::get_server_connection_state()->max_clients;
+			const auto* max_clients_dvar = game::Dvar_FindVar("ui_maxclients");
+			if (game::SV_Loaded() && !game::Com_FrontEnd_IsInFrontEnd())
+			{
+				state.max_players = max_clients_dvar ? max_clients_dvar->current.integer : 0;
+			}
+			else
+			{
+				state.max_players = party::get_server_connection_state()->max_clients;
+			}
 		}
 
 		return state;

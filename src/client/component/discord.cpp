@@ -62,9 +62,6 @@ namespace discord
 
 		constexpr auto* JOIN_SECRET_PREFIX = "iw7:1:";
 
-		std::mutex pending_join_mutex;
-		std::string pending_join_secret;
-
 		// Invite-driven joins wait here until the game is ready to act on a connect.
 		std::mutex pending_route_mutex;
 		std::optional<std::pair<std::string, std::string>> pending_route; // (token, address)
@@ -75,8 +72,7 @@ namespace discord
 		// Ownership handoff. wire_* is set from the IPC IO thread; the rest is main-thread only.
 		constexpr auto OWNERSHIP_RELEASE_GRACE = 5s;
 		std::atomic_bool wire_launcher_owns{false};
-		bool effective_launcher_owns = false;
-		bool presence_silent = false;
+		bool effective_launcher_owns = false; // native RPC stays silent while true
 		bool release_pending = false;
 		std::chrono::steady_clock::time_point release_deadline{};
 
@@ -119,6 +115,22 @@ namespace discord
 			return game::CL_IsGameClientActive(0) && !game::Com_FrontEndScene_IsActive();
 		}
 
+		int get_snapshot_player_count()
+		{
+			return *reinterpret_cast<int*>(0x14434FEF0); // numClients from snapshot
+		}
+
+		int get_max_player_count()
+		{
+			if (game::SV_Loaded() && !game::Com_FrontEnd_IsInFrontEnd())
+			{
+				const auto* max_clients_dvar = game::Dvar_FindVar("ui_maxclients");
+				return max_clients_dvar ? max_clients_dvar->current.integer : 12;
+			}
+
+			return party::get_server_connection_state()->max_clients;
+		}
+
 		std::string get_join_address()
 		{
 			if (!is_ingame())
@@ -132,11 +144,10 @@ namespace discord
 				return endpoint;
 			}
 
-			// Client on a directly-reachable server: advertise it (token will be "-").
-			const auto& connected = party::get_server_connection_state()->host;
-			if (network::is_connectable_address(connected) && !network::is_private_ip(connected))
+			// Client on a public dedi: advertise it (token "-"); the name check rejects stale/private connection state.
+			if (!party::get_public_server_name().empty())
 			{
-				return network::address_to_string(connected);
+				return network::address_to_string(party::get_server_connection_state()->host);
 			}
 
 			return {};
@@ -190,38 +201,22 @@ namespace discord
 			return true;
 		}
 
-		void process_pending_join()
+		// Route a structured join: token "-"/empty => direct connect, else NAT punch. Main pipeline only.
+		void route_join(const std::string& token, const std::string& address)
 		{
-			std::string secret;
+			if (token.empty() || token == "-")
 			{
-				std::lock_guard<std::mutex> lock(pending_join_mutex);
-				secret = std::move(pending_join_secret);
-				pending_join_secret.clear();
-			}
-
-			if (secret.empty())
-			{
-				return;
-			}
-
-			std::string token;
-			std::string address;
-			if (!parse_join_secret(secret, token, address))
-			{
-				// Legacy/raw-address invite (pre-token secrets were just "ip:port").
-				const auto parsed = network::address_from_string(secret);
-				if (network::is_connectable_address(parsed))
+				// party::connect directly; the "connect" command refuses while ingame.
+				const auto target = network::address_from_string(address);
+				if (network::is_connectable_address(target))
 				{
-					command::execute("connect " + network::address_to_string(parsed));
-				}
-				else
-				{
-					console::error("Discord: invalid join secret\n");
+					party::connect(target);
 				}
 				return;
 			}
 
-			route_join(token, address);
+			// Hole-punch toward the host; falls back to `address` (port-forward/VPN).
+			nat::begin_join(token, address);
 		}
 
 		// True once the game can act on a connect (menu reached, online data synced); routing earlier crashes.
@@ -233,14 +228,6 @@ namespace discord
 		// Drains an invite-driven join, but only once join_ready() (routing mid-load crashes).
 		void process_pending_route()
 		{
-			{
-				std::lock_guard<std::mutex> lock(pending_route_mutex);
-				if (!pending_route)
-				{
-					return;
-				}
-			}
-
 			if (!join_ready())
 			{
 				return; // engine still coming up; keep waiting
@@ -269,7 +256,6 @@ namespace discord
 				if (!effective_launcher_owns)
 				{
 					effective_launcher_owns = true;
-					presence_silent = true;
 					Discord_ClearPresence(); // clear once on entry; keep the connection initialized
 				}
 				return;
@@ -290,9 +276,8 @@ namespace discord
 
 			if (now >= release_deadline)
 			{
-				effective_launcher_owns = false;
+				effective_launcher_owns = false; // native RPC resumes on the next update_discord tick
 				release_pending = false;
-				presence_silent = false; // native RPC resumes on the next update_discord tick
 			}
 		}
 
@@ -342,11 +327,9 @@ namespace discord
 		{
 			static const game::dvar_t* mapname_dvar = nullptr;
 			static const game::dvar_t* gametype_dvar = nullptr;
-			static const game::dvar_t* max_clients_dvar = nullptr;
 
 			if (!mapname_dvar) mapname_dvar = game::Dvar_FindVar("ui_mapname");
 			if (!gametype_dvar) gametype_dvar = game::Dvar_FindVar("ui_gametype");
-			if (!max_clients_dvar) max_clients_dvar = game::Dvar_FindVar("ui_maxclients");
 
 			static std::string mapname_str = "mp_frontend";
 			const char* mapname = mapname_str.c_str();
@@ -368,19 +351,16 @@ namespace discord
 
 				discord_strings.details = std::format("{} on {}", gametype_ui, mapname_ui);
 
-				discord_presence.partySize = *reinterpret_cast<int*>(0x14434FEF0); // probably numClients from snapshot
+				discord_presence.partySize = get_snapshot_player_count();
+				discord_presence.partyMax = get_max_player_count();
 
 				if (game::SV_Loaded() && !game::Com_FrontEnd_IsInFrontEnd())
 				{
 					discord_strings.state = "Private Match";
-					discord_presence.partyMax = (max_clients_dvar ? max_clients_dvar->current.integer : 12);
 				}
 				else
 				{
-					auto* server_connection_state = party::get_server_connection_state();
-
-					discord_strings.state = utils::string::strip(server_connection_state->hostname);
-					discord_presence.partyMax = server_connection_state->max_clients;
+					discord_strings.state = utils::string::strip(party::get_server_connection_state()->hostname);
 				}
 
 				// Join secret: an open private match (hole-punch) OR a directly reachable server.
@@ -430,7 +410,7 @@ namespace discord
 
 		void update_discord()
 		{
-			if (presence_silent)
+			if (effective_launcher_owns)
 			{
 				return; // launcher owns presence; stay silent but connected
 			}
@@ -522,7 +502,7 @@ namespace discord
 			console::info("Discord: Ready on %s (%s)\n", request->username, request->userId);
 
 			// Don't prime a card while the launcher owns presence (e.g. a Discord reconnect mid-session).
-			if (!presence_silent)
+			if (!effective_launcher_owns)
 			{
 				Discord_UpdatePresence(&presence);
 			}
@@ -542,9 +522,24 @@ namespace discord
 
 			console::debug("Discord: join_game called with secret '%s'\n", join_secret);
 
-			// Queue here (Discord callback thread); process_pending_join does the work on main.
-			std::lock_guard<std::mutex> lock(pending_join_mutex);
-			pending_join_secret = join_secret;
+			std::string token;
+			std::string address;
+			if (!parse_join_secret(join_secret, token, address))
+			{
+				// Legacy/raw-address invite (pre-token secrets were just "ip:port").
+				const auto parsed = network::address_from_string(join_secret);
+				if (!network::is_connectable_address(parsed))
+				{
+					console::error("Discord: invalid join secret\n");
+					return;
+				}
+
+				token = "-";
+				address = network::address_to_string(parsed);
+			}
+
+			// Queue like launcher joins; process_pending_route routes once join_ready().
+			queue_join(token, address);
 		}
 
 		/*
@@ -706,17 +701,8 @@ namespace discord
 		// Player counts only make sense outside SP (the snapshot global is stale there).
 		if (state.mode != "sp")
 		{
-			state.players = *reinterpret_cast<int*>(0x14434FEF0); // numClients from snapshot
-
-			const auto* max_clients_dvar = game::Dvar_FindVar("ui_maxclients");
-			if (game::SV_Loaded() && !game::Com_FrontEnd_IsInFrontEnd())
-			{
-				state.max_players = max_clients_dvar ? max_clients_dvar->current.integer : 0;
-			}
-			else
-			{
-				state.max_players = party::get_server_connection_state()->max_clients;
-			}
+			state.players = get_snapshot_player_count();
+			state.max_players = get_max_player_count();
 		}
 
 		return state;
@@ -750,19 +736,6 @@ namespace discord
 		nat::get_rendezvous(transport.rendezvous_host, transport.rendezvous_port);
 		split_address(address, transport.fallback_ip, transport.fallback_port);
 		return transport;
-	}
-
-	void route_join(const std::string& token, const std::string& address)
-	{
-		// "-" / empty token => friend is on a directly reachable server.
-		if (token.empty() || token == "-")
-		{
-			command::execute("connect " + address);
-			return;
-		}
-
-		// Hole-punch toward the host; falls back to `address` (port-forward/VPN).
-		nat::begin_join(token, address);
 	}
 
 	void queue_join(const std::string& token, const std::string& address)
@@ -805,22 +778,16 @@ namespace discord
 				*/
 			}, scheduler::pipeline::main);
 
-			scheduler::loop(update_discord, scheduler::pipeline::main, 5s);
+			// 2s is cheap post-candidate-cache (no probes per tick); discord-rpc absorbs repeat updates.
+			scheduler::loop(update_discord, scheduler::pipeline::main, 2s);
 
-			// Hand the Discord card to/from the launcher based on the IPC ownership signal.
-			scheduler::loop(ownership_tick, scheduler::pipeline::main, 250ms);
-
-			// Discord callbacks (and the resulting joins) must run on the main thread,
-			// since join handling drives the NAT punch and the game's network socket,
-			// and reads nat state that is only touched on main.
+			// One main-pipeline tick: Discord callbacks and join routing drive nat/network state that is main-only.
 			scheduler::loop([]
 			{
 				Discord_RunCallbacks();
-				process_pending_join();
+				ownership_tick();
+				process_pending_route();
 			}, scheduler::pipeline::main, 250ms);
-
-			// Invite-driven joins from the launcher wait for join_ready() before routing.
-			scheduler::loop(process_pending_route, scheduler::pipeline::main, 250ms);
 
 			initialized_ = true;
 

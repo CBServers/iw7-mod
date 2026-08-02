@@ -63,6 +63,7 @@ namespace ipc
 			add("mode", state.mode);
 			add("gametype", state.gametype);
 			add("serverName", state.server_name);
+			add("matchId", state.match_id);
 			doc.AddMember(rapidjson::StringRef("players"), state.players, allocator);
 			doc.AddMember(rapidjson::StringRef("maxPlayers"), state.max_players, allocator);
 

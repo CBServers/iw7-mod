@@ -153,6 +153,38 @@ namespace discord
 			return {};
 		}
 
+		// Identity of the match we're in, derived so the host and every joiner land on the same value.
+		// Private matches key on the punch token, public dedis on the address all clients already agree
+		// on. The joined token precedes the address so a punched host is never mistaken for a dedi.
+		std::string get_match_id()
+		{
+			if (!is_ingame())
+			{
+				return {};
+			}
+
+			std::string key;
+			// Hosted token, not the active one: identity has to survive a close to friends.
+			if (const auto host_token = nat::hosted_session_token(); !host_token.empty())
+			{
+				key = "t:" + host_token;
+			}
+			else if (const auto token = nat::joined_session_token(); !token.empty())
+			{
+				key = "t:" + token;
+			}
+			else if (!party::get_public_server_name().empty())
+			{
+				key = "a:" + network::address_to_string(party::get_server_connection_state()->host);
+			}
+			else
+			{
+				return {};
+			}
+
+			return utils::string::va("%08X", utils::cryptography::jenkins_one_at_a_time::compute(key));
+		}
+
 		std::string make_join_secret(const std::string& address)
 		{
 			if (address.empty())
@@ -704,6 +736,8 @@ namespace discord
 			state.players = get_snapshot_player_count();
 			state.max_players = get_max_player_count();
 		}
+
+		state.match_id = get_match_id();
 
 		return state;
 	}

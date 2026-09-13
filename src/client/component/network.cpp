@@ -58,6 +58,9 @@ namespace network
 
 	namespace
 	{
+		// The port actually bound (net_port may shift on conflict); read from async threads.
+		std::atomic<uint16_t> bound_port{};
+
 		bool cl_dispatch_connectionless_packet_stub(int client_num, game::netadr_s* from, game::msg_t* msg, int time)
 		{
 			if (handle_command(from, game::Cmd_Argv(0), msg))
@@ -218,6 +221,7 @@ namespace network
 				return;
 			}
 
+			bound_port = static_cast<uint16_t>(net_port->current.integer + port_diff);
 			game::Dvar_SetInt(net_port, net_port->current.integer + port_diff);
 		}
 
@@ -348,6 +352,11 @@ namespace network
 			&& address.ip[0] != 127
 			&& address.ip[0] < 224
 			&& ::ntohs(address.port) >= 1024;
+	}
+
+	uint16_t get_bound_port()
+	{
+		return bound_port;
 	}
 
 	class component final : public component_interface

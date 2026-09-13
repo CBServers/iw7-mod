@@ -9,6 +9,7 @@
 
 #include "command.hpp"
 #include "console/console.hpp"
+#include "nat.hpp"
 #include "network.hpp"
 #include "profile_infos.hpp"
 #include "scheduler.hpp"
@@ -1183,6 +1184,21 @@ namespace party
 				if (info.get("challenge") != server_connection_state.challenge)
 				{
 					info_response_error("Connection failed: Invalid challenge.");
+					return;
+				}
+
+				// Our own xuid means the address hairpinned back to this machine's port mapping.
+				const auto own_xuid = utils::string::va("%llX", steam::SteamUser()->GetSteamID().bits);
+				if (info.get("dedicated") != "1"s && utils::string::to_lower(info.get("xuid")) == utils::string::to_lower(own_xuid))
+				{
+					if (nat::on_self_connect(target))
+					{
+						command::execute("luiLeaveMenu AcceptingInvite", true);
+					}
+					else
+					{
+						info_response_error("That address points back at your own game. Ask the host to check their port forwarding.");
+					}
 					return;
 				}
 

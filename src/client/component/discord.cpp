@@ -728,7 +728,9 @@ namespace discord
 		state.gametype = gametype.empty()
 			                 ? std::string{}
 			                 : truncate(utils::string::strip(game::UI_GetGameTypeDisplayName(gametype.data())), 128);
+		state.gametype_raw = gametype;
 		state.server_name = truncate(utils::string::strip(party::get_public_server_name()), 128);
+		state.openable = nat::can_open_to_friends();
 
 		// Player counts only make sense outside SP (the snapshot global is stale there).
 		if (state.mode != "sp")

@@ -1,10 +1,41 @@
 #include <std_include.hpp>
 #include "../steam.hpp"
 
-//#include <game/game.hpp>
+#include "component/friends.hpp"
 
 namespace steam
 {
+	namespace
+	{
+		// 24-byte FriendGameInfo_t: game_id | game_ip | game_port | query_port | lobby steam_id
+		struct friend_game_info
+		{
+			game_id game;
+			unsigned int game_ip;
+			unsigned short game_port;
+			unsigned short query_port;
+			steam_id lobby;
+		};
+
+		constexpr unsigned int IW7_APP_ID = 292730;
+
+		// Lobby id shape the game validates before treating a friend as joinable (type 8, instance bit 0x40000)
+		steam_id make_lobby_id(const unsigned int account_id)
+		{
+			steam_id id{};
+			id.raw.account_id = account_id;
+			id.raw.account_instance = 0x40000;
+			id.raw.account_type = 8;
+			id.raw.universe = 1;
+			return id;
+		}
+
+		bool find_cb_friend(const steam_id id, ::friends::friend_record& out)
+		{
+			return ::friends::find_friend(id.bits, out);
+		}
+	}
+
 	const char* friends::GetPersonaName()
 	{
 		return "1337";
@@ -22,32 +53,67 @@ namespace steam
 
 	int friends::GetFriendCount(int eFriendFlags)
 	{
-		return 0;
+		return static_cast<int>(::friends::get_friends().size());
 	}
 
 	steam_id friends::GetFriendByIndex(int iFriend, int iFriendFlags)
 	{
-		return steam_id();
+		const auto list = ::friends::get_friends();
+		if (iFriend < 0 || iFriend >= static_cast<int>(list.size()))
+		{
+			return steam_id();
+		}
+
+		steam_id id{};
+		id.bits = list[iFriend].steam_id_bits;
+		return id;
 	}
 
 	int friends::GetFriendRelationship(steam_id steamIDFriend)
 	{
-		return 0;
+		::friends::friend_record record{};
+		return find_cb_friend(steamIDFriend, record) ? 3 : 0;
 	}
 
 	int friends::GetFriendPersonaState(steam_id steamIDFriend)
 	{
-		return 0;
+		::friends::friend_record record{};
+		return find_cb_friend(steamIDFriend, record) ? record.persona_state : 0;
 	}
 
 	const char* friends::GetFriendPersonaName(steam_id steamIDFriend)
 	{
+		::friends::friend_record record{};
+		if (find_cb_friend(steamIDFriend, record))
+		{
+			static thread_local std::string name_buffer;
+			name_buffer = record.name;
+			return name_buffer.data();
+		}
+
 		return "";
 	}
 
 	bool friends::GetFriendGamePlayed(steam_id steamIDFriend, void* pFriendGameInfo)
 	{
-		return false;
+		::friends::friend_record record{};
+		if (!find_cb_friend(steamIDFriend, record) || !record.in_game)
+		{
+			return false;
+		}
+
+		if (pFriendGameInfo)
+		{
+			auto* info = static_cast<friend_game_info*>(pFriendGameInfo);
+			info->game.bits = 0;
+			info->game.raw.app_id = IW7_APP_ID;
+			info->game_ip = 0;
+			info->game_port = 0;
+			info->query_port = 0;
+			info->lobby = make_lobby_id(steamIDFriend.raw.account_id);
+		}
+
+		return true;
 	}
 
 	const char* friends::GetFriendPersonaNameHistory(steam_id steamIDFriend, int iPersonaName)
@@ -57,7 +123,8 @@ namespace steam
 
 	bool friends::HasFriend(steam_id steamIDFriend, int eFriendFlags)
 	{
-		return false;
+		::friends::friend_record record{};
+		return find_cb_friend(steamIDFriend, record);
 	}
 
 	int friends::GetClanCount()
@@ -189,7 +256,16 @@ namespace steam
 
 	const char* friends::GetFriendRichPresence(steam_id steamIDFriend, const char* pchKey)
 	{
-		return "";
+		// The native list shows the "status" key verbatim for a friend in this title.
+		::friends::friend_record record{};
+		if (!pchKey || std::string_view(pchKey) != "status" || !find_cb_friend(steamIDFriend, record))
+		{
+			return "";
+		}
+
+		static thread_local std::string status_buffer;
+		status_buffer = ::friends::get_presence_text(record);
+		return status_buffer.data();
 	}
 
 	int friends::GetFriendRichPresenceKeyCount(steam_id steamIDFriend)
@@ -208,7 +284,7 @@ namespace steam
 
 	bool friends::InviteUserToGame(steam_id steamIDFriend, const char* pchConnectString)
 	{
-		return false;
+		return ::friends::request_invite(steamIDFriend.bits);
 	}
 
 	int friends::GetCoplayFriendCount()

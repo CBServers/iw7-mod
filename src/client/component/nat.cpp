@@ -545,6 +545,23 @@ namespace nat
 		return joined_token;
 	}
 
+	bool can_open_to_friends()
+	{
+		return is_hosting() && !hosting_enabled;
+	}
+
+	bool open_to_friends()
+	{
+		if (!is_hosting())
+		{
+			return false;
+		}
+
+		set_hosting_enabled(true);
+		update_host_session();
+		return true;
+	}
+
 	std::string get_host_endpoint()
 	{
 		// Gated on host_token so the advertised endpoint and join-secret token agree.

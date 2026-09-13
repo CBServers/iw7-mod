@@ -8,6 +8,7 @@
 #include "network.hpp"
 #include "party.hpp"
 #include "scheduler.hpp"
+#include "toast.hpp"
 #include "upnp.hpp"
 
 #include <utils/cryptography.hpp>
@@ -25,11 +26,13 @@ namespace nat
 		game::dvar_t* rendezvous_ip{};
 		game::dvar_t* rendezvous_port{};
 		game::dvar_t* nat_open_dvar{};
+		game::dvar_t* auto_open_dvar{};
 
 		constexpr auto JOINED_TOKEN_GRACE = 15s;
 
 		// All state below is touched only on the main thread, so no locking is needed.
 		bool hosting_enabled{}; // host opted in via nat_host; mirrored into the nat_open dvar
+		bool auto_open_applied{}; // nat_autoOpen fires once per match, so a later manual close sticks
 		std::string host_token{}; // non-empty while hosting
 		std::string hosted_token{}; // last host_token, retained across a close so the match keeps its identity
 		std::string joined_token{}; // token of the punched session we joined; cleared when we leave
@@ -350,24 +353,30 @@ namespace nat
 
 			// party::connect directly; the "connect" command refuses while ingame (e.g. invite accepted mid-match).
 			const auto target = network::address_from_string(address);
-			if (network::is_connectable_address(target))
+			if (!network::is_connectable_address(target))
 			{
-				party::connect(target);
+				console::warn("[nat] refusing to connect to unconnectable address %s\n", address.data());
+				return;
+			}
 
-				// Adopt the host's token as our match identity only once we actually connect, so a
-				// punch that never lands can't mislabel the match we're still sitting in.
-				if (punch.joining)
-				{
-					joined_token = punch.token;
-					joined_token_deadline = std::chrono::steady_clock::now() + JOINED_TOKEN_GRACE;
-				}
+			party::connect(target);
+
+			// Adopt the host's token as our match identity only once we actually connect, so a
+			// punch that never lands can't mislabel the match we're still sitting in.
+			if (punch.joining)
+			{
+				joined_token = punch.token;
+				joined_token_deadline = std::chrono::steady_clock::now() + JOINED_TOKEN_GRACE;
 			}
 		}
 
 		void show_join_error()
 		{
-			console::error("[nat] could not reach the host. They may be on a restricted network (e.g. a mobile "
-				"hotspot). Ask them to host on home Wi-Fi, port-forward, or use a VPN like Radmin.\n");
+			constexpr auto message = "Could not reach the host. They may be on a restricted network (e.g. a mobile "
+				"hotspot). Ask them to host on home Wi-Fi, port-forward, or use a VPN like Radmin.";
+
+			console::error("[nat] %s\n", message);
+			party::info_response_error(message);
 		}
 
 		void feed_candidates(const std::vector<std::string>& candidate_strings)
@@ -447,6 +456,8 @@ namespace nat
 			hosting_enabled = enabled;
 			if (enabled)
 			{
+				// Any open uses up this match's auto-open, so a later manual close isn't undone.
+				auto_open_applied = true;
 				upnp::ensure_mapped(); // retry a startup mapping the router was too slow for
 			}
 
@@ -475,6 +486,13 @@ namespace nat
 			{
 				// Left the match: the identity dies with it, unlike a mere close to friends.
 				hosted_token.clear();
+				auto_open_applied = false;
+			}
+			else if (!hosting_enabled && !auto_open_applied && auto_open_dvar && auto_open_dvar->current.enabled)
+			{
+				// Opted in from the private match lobby's match settings before starting.
+				set_hosting_enabled(true);
+				toast::show("OPEN TO FRIENDS", "Friends can now join this match.");
 			}
 
 			if (is_hosting() && hosting_enabled)
@@ -557,8 +575,13 @@ namespace nat
 			return false;
 		}
 
-		set_hosting_enabled(true);
-		update_host_session();
+		// A repeated open-match must not re-run registration.
+		if (!hosting_enabled)
+		{
+			set_hosting_enabled(true);
+			update_host_session();
+		}
+
 		return true;
 	}
 
@@ -653,6 +676,8 @@ namespace nat
 					game::DVAR_FLAG_NONE, "NAT rendezvous server port");
 				nat_open_dvar = game::Dvar_RegisterBool("nat_open", false,
 					game::DVAR_FLAG_NONE, "Whether the current private match is open to friends");
+				auto_open_dvar = game::Dvar_RegisterBool("nat_autoOpen", false,
+					game::DVAR_FLAG_NONE, "Open a hosted private match to friends automatically once it starts");
 
 				game::netadr_s warm{};
 				get_rendezvous_server(warm); // kick the async DNS resolve so first use hits the cache

@@ -7,9 +7,7 @@
 #include "ipc.hpp"
 #include "nat.hpp"
 #include "scheduler.hpp"
-
-#include "game/ui_scripting/execution.hpp"
-#include "ui_scripting.hpp"
+#include "toast.hpp"
 
 #include <utils/concurrency.hpp>
 #include <utils/thread.hpp>
@@ -201,70 +199,43 @@ namespace ipc
 			friends::apply_snapshot(entries);
 		}
 
-		// Raised on the LUI root by ui_scripts/CBToast; waits out a Lua VM restart (map load) for a few seconds.
-		void show_toast(const std::string& kicker, const std::string& title, const std::string& body)
-		{
-			const auto deadline = std::chrono::steady_clock::now() + 10s;
-			scheduler::schedule([=]
-			{
-				if (std::chrono::steady_clock::now() > deadline)
-				{
-					return scheduler::cond_end;
-				}
-
-				if (!ui_scripting::lui_running())
-				{
-					return scheduler::cond_continue;
-				}
-
-				ui_scripting::notify("cb_toast", {{"kicker", kicker}, {"title", title}, {"body", body}});
-				return scheduler::cond_end;
-			}, scheduler::pipeline::lui, 250ms);
-		}
-
-		// Passive heads-up for an incoming invite; accepting still happens in the launcher.
+		// Passive heads-up for an incoming invite or knock; answering still happens in the launcher.
 		void handle_notify(const rapidjson::Value& doc)
 		{
-			if (jstr(doc, "kind") != "invite")
+			const auto kind = jstr(doc, "kind");
+			if (kind != "invite" && kind != "join-request")
 			{
 				return;
 			}
 
-			// Remote-controlled text going into LUI: printable ASCII, no color codes, capped.
-			std::string from;
-			for (const auto c : jstr(doc, "from"))
-			{
-				if ((c > 0x20 && c < 0x7F && c != '^') || (c == ' ' && !from.empty()))
-				{
-					from.push_back(c);
-				}
-			}
-
-			from.resize(std::min<size_t>(from.size(), 32));
-			while (!from.empty() && from.back() == ' ')
-			{
-				from.pop_back();
-			}
-
+			auto from = toast::sanitize_name(jstr(doc, "from"));
 			if (from.empty())
 			{
 				from = "A friend";
 			}
 
-			// Io thread only. Keeps a burst of invites from stacking LUI calls.
+			// Io thread only. Keeps a burst of notices from stacking LUI calls.
 			static std::chrono::steady_clock::time_point last_toast{};
-			static std::string last_from;
+			static std::string last_key;
 
 			const auto now = std::chrono::steady_clock::now();
-			if (now - last_toast < 3s || (from == last_from && now - last_toast < 15s))
+			const auto key = kind + ":" + from;
+			if (now - last_toast < 3s || (key == last_key && now - last_toast < 15s))
 			{
 				return;
 			}
 
 			last_toast = now;
-			last_from = from;
+			last_key = key;
 
-			show_toast("INVITE", from + " invited you", "Accept in CB Launcher");
+			if (kind == "invite")
+			{
+				toast::show("INVITE", from + " invited you", "Accept in CB Launcher");
+			}
+			else
+			{
+				toast::show("JOIN REQUEST", from + " wants to join", "Approve in CB Launcher to open your match");
+			}
 		}
 
 		// Route an invite's structured transport (data, never a console string) like a native join, then ack.
@@ -368,10 +339,16 @@ namespace ipc
 				// Launcher-approved knock/invite: open the match, ack, and push the transport immediately.
 				scheduler::once([]
 				{
+					const auto was_closed = nat::can_open_to_friends();
 					const auto opened = nat::open_to_friends();
 					enqueue(std::string(R"({"type":"open-match-ack","opened":)")
 						+ (opened ? "true" : "false") + "}\n");
 					send_presence();
+
+					if (was_closed && opened)
+					{
+						toast::show("OPEN TO FRIENDS", "Friends can now join this match.");
+					}
 				}, scheduler::pipeline::main);
 			}
 		}

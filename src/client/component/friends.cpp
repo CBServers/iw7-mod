@@ -9,6 +9,7 @@
 #include "ipc.hpp"
 #include "nat.hpp"
 #include "scheduler.hpp"
+#include "toast.hpp"
 
 #include <utils/concurrency.hpp>
 #include <utils/hook.hpp>
@@ -71,6 +72,12 @@ namespace friends
 			return discord::get_join_transport().has_value() || nat::can_open_to_friends();
 		}
 
+		std::string display_name(const friend_record& record)
+		{
+			const auto name = toast::sanitize_name(record.name);
+			return name.empty() ? "your friend" : name;
+		}
+
 		utils::hook::detour is_friend_joinable_hook;
 		utils::hook::detour join_online_friend_hook;
 		utils::hook::detour invite_online_friend_hook;
@@ -104,15 +111,18 @@ namespace friends
 			return join_online_friend_hook.invoke<void*>(controller, xuid);
 		}
 
-		// Backend of Friends.InviteOnlineFriend; mirrors the native "invite sent" popup.
+		// Backend of Friends.InviteOnlineFriend; the toast replaces the native modal "invite sent" popup.
 		std::int64_t invite_online_friend_stub(const unsigned int controller, const unsigned long long xuid)
 		{
 			friend_record record{};
 			if (find_friend(xuid, record))
 			{
+				// Read before request_invite, which opens a closed hosted match as a side effect.
+				const auto opens_match = nat::can_open_to_friends();
 				if (can_invite(record) && request_invite(xuid))
 				{
-					game::LUI_OpenMenu(0, "popup_friend_invite_sent", 1, 0, 1);
+					toast::show("INVITE SENT", display_name(record),
+						opens_match ? "Match is now open to friends." : "");
 				}
 				return 0;
 			}

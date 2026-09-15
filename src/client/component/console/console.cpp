@@ -123,7 +123,7 @@ namespace console
 			out.push_back('\n');
 		}
 
-		if (console_log)
+		if (console_log && console_log->current.string)
 			utils::io::write_file(console_log->current.string, out, true);
 
 		if (console::is_enabled())

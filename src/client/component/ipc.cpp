@@ -459,7 +459,11 @@ namespace ipc
 				CloseHandle(pipe);
 				// Pipe lost: hand presence back to native RPC and drop the launcher-fed friends before they go stale.
 				discord::set_launcher_presence_owner(false);
-				friends::apply_snapshot({});
+				// On quit this runs from pre_destroy after Dvar_Shutdown, so skip the snapshot (it logs).
+				if (!stop_io)
+				{
+					friends::apply_snapshot({});
+				}
 				get_queue().access([](std::deque<std::string>& queue) { queue.clear(); });
 			}
 		}

@@ -381,16 +381,16 @@ namespace demonware
 				double randomValue = dis(gen);
 				double cumulativeWeight = 0;
 
-				// Find the item corresponding to the random value
-				for (size_t i = 0; i < lootmap.size(); ++i) {
+				for (size_t i = 0; i < lootmap.size(); ++i) 
+				{
 					cumulativeWeight += adjustedWeights[i];
-					if (randomValue < cumulativeWeight) {
+					if (randomValue < cumulativeWeight) 
+					{
 						if (quaranteedQuality && get_loot(lootmap[i]).quality < quaranteedQuality)
 							continue;
 						else
 							quaranteedQuality = 0;
 
-						// Add item to the result if it's not already selected
 						if (std::find(selectedItems.begin(), selectedItems.end(), get_loot(lootmap[i])) == selectedItems.end()) {
 							selectedItems.push_back(get_loot(lootmap[i]));
 							break;
@@ -452,30 +452,25 @@ namespace demonware
 			return items;
 		};
 
+		void read_json_data();
+
 		std::vector<Item> get_all_loot_owned()
 		{
-			auto lootmap = get_all_lootmaps();
-			std::vector<Item> items{};
-			for (size_t i = 0; i < lootmap.size(); i++)
-			{
-				if (get_item_balance(lootmap[i]))
-				{
-					items.push_back(get_loot(lootmap[i]));
-				}
-			}
+			cache_loot();
+			read_json_data();
 
-			for (auto& crate : lootcrates)
+			std::vector<Item> items{};
+			for (const auto& entry : json_buffer["Loot"].items())
 			{
-				const auto crate_id = crate.first;
-				if (get_item_balance(crate_id))
+				const auto id = static_cast<std::uint32_t>(std::strtoul(entry.key().data(), nullptr, 10));
+				if (!id || !get_item_balance(id))
 				{
-					Item crate_item{};
-					crate_item.id = crate_id;
-					crate_item.quality = 0;
-					crate_item.salvageReturned = 0;
-					crate_item.cost = 0;
-					items.push_back(crate_item);
+					continue;
 				}
+
+				auto item = get_loot(id);
+				item.id = id;
+				items.push_back(item);
 			}
 
 			return items;
@@ -659,12 +654,9 @@ namespace demonware
 			read_json_data();
 
 			const int64_t last_date_claimed = json_read<int64_t>(json_buffer["DailyLogin"]["LastDateClaimed"]);
-
-			// this may happen if the last date claimed doesn't exist yet
 			if (last_date_claimed == -1)
 				return true;
 
-			// check if its been a new day since the last claim
 			std::time_t now_time = std::time(nullptr);
 			std::time_t last_time = static_cast<std::time_t>(last_date_claimed);
 

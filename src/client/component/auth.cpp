@@ -22,6 +22,39 @@ namespace auth
 {
 	namespace
 	{
+		std::string get_player_suffix()
+		{
+			static const auto suffix = []() -> std::string
+			{
+				// other player stuff starts at 2, not 1
+				for (auto i = 1; i <= 8; ++i)
+				{
+					const auto mutex = CreateMutexA(nullptr, FALSE, utils::string::va("iw7-mod-player-%d", i));
+					if (!mutex)
+					{
+						break;
+					}
+
+					if (GetLastError() != ERROR_ALREADY_EXISTS)
+					{
+						return i == 1 ? std::string{} : utils::string::va("-%d", i);
+					}
+
+					ReleaseMutex(mutex);
+					CloseHandle(mutex);
+				}
+
+				return {};
+			}();
+
+			return suffix;
+		}
+
+		std::string get_key_path(const char* name)
+		{
+			return (utils::properties::get_appdata_path() / utils::string::va("iw7-%s%s.key", name, get_player_suffix().data())).generic_string();
+		}
+
 		std::string get_hdd_serial()
 		{
 			DWORD serial{};
@@ -305,7 +338,7 @@ namespace auth
 			p(0x140DBCF55, 0x140DBCF95);
 
 			p(0x1405CE425, 0x1405CE466); // party
-			p(0x140DA8516, 0x140DA853C);
+			p(0x140DA8516, 0x140DA8557);
 			p(0x140DA8C89, 0x140DA8CCF);
 
 			p(0x1405CCD2B, 0x1405CCDD7);

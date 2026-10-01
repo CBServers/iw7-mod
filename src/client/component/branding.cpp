@@ -49,7 +49,7 @@ namespace branding
 
 			scheduler::once([]()
 			{
-				dvars::branding = game::Dvar_RegisterBool("branding", false, game::DvarFlags::DVAR_FLAG_SAVED, "Show branding");
+				dvars::branding = game::Dvar_RegisterBool("branding", false, game::DvarFlags::DVAR_FLAG_SAVED, "Show branding in-game");
 			}, scheduler::pipeline::renderer);
 
 #if GIT_DIRTY == 1
@@ -59,7 +59,8 @@ namespace branding
 
 			scheduler::loop([]()
 			{
-				if (dvars::branding && dvars::branding->current.enabled)
+				const auto in_game = game::CL_IsGameClientActive(0) && !game::Com_FrontEndScene_IsActive();
+				if (!in_game || (dvars::branding && dvars::branding->current.enabled))
 				{
 #if GIT_DIRTY == 1
 					const auto* placement = game::ScrPlace_GetViewPlacement();

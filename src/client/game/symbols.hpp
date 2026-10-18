@@ -185,6 +185,8 @@ namespace game
 	WEAK symbol<int(const int mapIndex)> Live_GetMapSource{ 0x140CE7340 };
 	WEAK symbol<int(const char* mapname)> Live_GetMapIndex{ 0x140CE72C0 };
 
+	WEAK symbol<int(const char* buffer, int max_infos, char** infos)> GameInfo_ParseArenas{ 0x1405AFB20 };
+
 	WEAK symbol<float()> LoadBar_GetLoadedFraction{ 0x1405DE190 };
 
 	WEAK symbol<PartyData* ()> Lobby_GetPartyData{ 0x1409C3E20 };
@@ -230,6 +232,8 @@ namespace game
 	WEAK symbol<void()> R_IssueRenderCommandsEnd{ 0x140E26EF0 };
 	WEAK symbol<void(float x, float y, float width, float height, float s0, float t0, float s1, float t1,
 		float* color, Material* material, int unk)> R_AddCmdDrawStretchPic{ 0x140E24DC0 };
+	WEAK symbol<void(const float(*verts)[2], float s0, float t0, float s1, float t1,
+		float* color, Material* material, int unk)> R_AddCmdDrawQuadPic{ 0x140E24CC0 };
 	WEAK symbol<void* (const char* text, int maxChars, GfxFont* font, int fontHeight, float x,
 		float y, float xScale, float yScale, float rotation, float* color,
 		int cursorPos, char cursor, FontGlowStyle* glowStyle, int a14, int a15, int a16, int a17)> AddBaseDrawTextCmd{ 0x140E23D90 };
@@ -374,6 +378,7 @@ namespace game
 	WEAK symbol<void(msg_t* msg, const void* data, std::int32_t length)> MSG_WriteData{ 0x140BB4340 };
 	WEAK symbol<void(msg_t* msg, std::int32_t data)> MSG_WriteByte{ 0x140BB4320 };
 	WEAK symbol<void(msg_t* msg, std::uint64_t data)> MSG_WriteInt64{ 0x140BB4570 };
+	WEAK symbol<char*(msg_t* msg, char* string, unsigned int max_chars)> MSG_ReadStringLine{ 0x140BB39D0 };
 	
 	WEAK symbol<void(gentity_s* ent,
 		gentity_s* other,
@@ -424,6 +429,13 @@ namespace game
 	WEAK symbol<char> isCheatOverride{ 0x141BBEF28 };
 
 	WEAK symbol<gentity_s> g_entities{ 0x143D22610 };
+
+	WEAK symbol<int> ui_num_arenas{ 0x144BFF660 };
+	WEAK symbol<int> ui_arena_buf_pos{ 0x144BFF664 };
+	WEAK symbol<char*> ui_arena_infos{ 0x144BFF670 };
+
+	WEAK symbol<int> ui_num_maps{ 0x144C105F4 };
+	WEAK symbol<char> ui_map_infos{ 0x144C105F8 };
 
 	WEAK symbol<unsigned int> svs_numclients{ 0x146B229E0 };
 	WEAK symbol<client_t*> svs_clients{ 0x146B22950 };

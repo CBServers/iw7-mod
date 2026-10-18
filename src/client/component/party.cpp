@@ -15,6 +15,7 @@
 #include "scheduler.hpp"
 #include "server_list.hpp"
 #include "download.hpp"
+#include "fastfiles.hpp"
 
 #include "utils/hash.hpp"
 
@@ -82,6 +83,19 @@ namespace party
 			std::string extension;
 			std::string name;
 			bool optional;
+			bool localized = false;
+		};
+
+		std::vector<fastdl_file> usermap_files =
+		{
+			{".ff", "usermap_hash", false},
+			{"_load.ff", "usermap_load_hash", true},
+			{"_art.ff", "usermap_art_hash", true},
+			{".arena", "usermap_arena_hash", true},
+			{".pak", "usermap_pak_hash", true},
+			{".sabl", "usermap_sabl_hash", true},
+			{".sabs", "usermap_sabs_hash", true},
+			{".ff", "usermap_loc_hash", true, true},
 		};
 
 		std::vector<fastdl_file> mod_files =
@@ -112,9 +126,29 @@ namespace party
 			return hash;
 		}
 
+		std::string get_usermap_file_path(const std::string& mapname, const std::string& extension)
+		{
+			return std::format("usermaps\\{}\\{}{}", mapname, mapname, extension);
+		}
+
+		std::string get_usermap_file_path(const std::string& mapname, const fastdl_file& file)
+		{
+			if (file.localized)
+			{
+				return std::format("usermaps\\{}\\{}_{}{}", mapname, game::SEH_GetCurrentLanguageCode(), mapname, file.extension);
+			}
+			return get_usermap_file_path(mapname, file.extension);
+		}
+
 		// generate hashes so they are cached
 		void generate_hashes(const std::string& mapname)
 		{
+			for (const auto& file : usermap_files)
+			{
+				const auto path = get_usermap_file_path(mapname, file);
+				get_file_hash(path);
+			}
+
 			// mod
 			const auto fs_game = get_dvar_string("fs_game");
 			if (!fs_game.empty())
@@ -124,6 +158,54 @@ namespace party
 					const auto path = std::format("{}\\mod{}", fs_game, file.extension);
 					get_file_hash(path);
 				}
+			}
+		}
+
+		void check_download_map(const utils::info_string& info, std::vector<download::file_t>& files)
+		{
+			const auto mapname = info.get("mapname");
+			if (fastfiles::is_stock_map(mapname))
+			{
+				return;
+			}
+
+			if (mapname.contains('.') || mapname.contains("::"))
+			{
+				throw std::runtime_error(utils::string::va("Invalid server mapname value '%s'", mapname.data()));
+			}
+
+			const auto check_file = [&](const fastdl_file& file)
+			{
+				auto filename = get_usermap_file_path(mapname, file);
+				std::ranges::replace(filename, '\\', '/');
+				const auto source_hash = info.get(file.name);
+				if (source_hash.empty())
+				{
+					if (!file.optional)
+					{
+						std::string missing_value = "Server '%s' is empty";
+						if (file.name == "usermap_hash"s)
+						{
+							missing_value += " (or you are missing content for map '%s')";
+						}
+						throw std::runtime_error(utils::string::va(missing_value.data(), file.name.data(), mapname.data()));
+					}
+
+					return;
+				}
+
+				const auto hash = get_file_hash(filename);
+				console::debug("hash != source_hash => %s != %s\n", source_hash.data(), hash.data());
+				if (hash != source_hash)
+				{
+					files.emplace_back(filename, source_hash);
+					return;
+				}
+			};
+
+			for (const auto& file : usermap_files)
+			{
+				check_file(file);
 			}
 		}
 
@@ -264,6 +346,7 @@ namespace party
 
 				const auto needs_restart = check_download_mod(info, files);
 				needs_vid_restart = needs_vid_restart || needs_restart;
+				check_download_map(info, files);
 
 				if (files.size() > 0)
 				{
@@ -308,34 +391,29 @@ namespace party
 
 		void xstartlobby()
 		{
-			// Retrieve game variables
 			const int privateMatch = game::Dvar_FindVar("xblive_privatematch")->current.integer;
 			const int maxPlayers = game::Dvar_FindVar("party_maxplayers")->current.integer;
 			const int privateClients = game::Dvar_FindVar("ui_privateClients")->current.integer;
 			const int availableSpots = maxPlayers - privateClients;
 
-			// Get party data
 			auto partyData = game::Lobby_GetPartyData();
 
-			// Stop current party and reset settings
+			// stop current party and reset settings
 			utils::hook::invoke<void>(0x1409D07B0, partyData); // Party_StopParty
 			utils::hook::invoke<void>(0x1409CAB20, partyData, 0, 1); // Party_Awake
 			utils::hook::invoke<void>(0x1409D0050); // Party_ResetTweakDvars
 			utils::hook::invoke<void>(0x1409CB460, partyData); // Voice_DisableLocalMics
 
-			// Set lobby presence
 			utils::hook::invoke<void>(0x140D330B0, 0); // Live_SetLobbyPresence
 
-			// Run playlist rule if not in a private match
 			if (!privateMatch && !game::environment::is_dedi())
 			{
 				utils::hook::invoke<void>(0x140CCD840, 0, 0); // Playlist_RunRule
 			}
 
-			// Set up lobby flags
 			const int flags = utils::hook::invoke<int>(0x140D9B200, 0); // PartyHost_GetCreateFlags
 
-			// Initialize lobby
+			// initialize lobby
 			utils::hook::invoke<void>(0x1409D9940, partyData, 0, 0, flags, privateClients, availableSpots);
 		}
 
@@ -387,6 +465,17 @@ namespace party
 			return vote_result::started;
 		}
 
+		void update_usermap(const std::string& mapname)
+		{
+			if (fastfiles::is_stock_map(mapname))
+			{
+				fastfiles::clear_usermap();
+				return;
+			}
+
+			fastfiles::set_usermap(mapname);
+		}
+
 		void perform_game_initialization(const int max_clients, const bool private_match)
 		{
 			const auto ui_maxclients = game::Dvar_FindVar("ui_maxclients");
@@ -429,6 +518,8 @@ namespace party
 			utils::hook::invoke<void>(0x140C19B00, gametype.data()); // setup agent count
 
 			preloaded_map = false;
+
+			update_usermap(mapname);
 
 			// connect
 			char session_info[0x100] = {};
@@ -493,11 +584,16 @@ namespace party
 			}
 		}
 
+		std::string current_sv_mapname;
+
 		utils::hook::detour sv_start_map_for_party_hook;
 		void sv_start_map_for_party_stub(const char* map, const char* game_type, int client_count, int agent_count, bool hardcore,
 			bool map_is_preloaded, bool migrate)
 		{
+			update_usermap(map);
+
 			hash_cache.clear();
+			current_sv_mapname = map;
 
 			if (game::environment::is_dedi())
 			{
@@ -506,6 +602,94 @@ namespace party
 
 			preloaded_map = map_is_preloaded;
 			sv_start_map_for_party_hook.invoke<void>(map, game_type, client_count, agent_count, hardcore, map_is_preloaded, migrate);
+		}
+
+		void set_new_map(const char* mapname, const char* gametype, game::msg_t* msg)
+		{
+			if (game::SV_Loaded())
+			{
+				utils::hook::invoke<void>(0x1409B3FE0, mapname, gametype);
+				return;
+			}
+
+			if (fastfiles::is_stock_map(mapname))
+			{
+				fastfiles::clear_usermap();
+				utils::hook::invoke<void>(0x1409B3FE0, mapname, gametype);
+				return;
+			}
+
+			fastfiles::set_usermap(mapname);
+
+			for (const auto& file : usermap_files)
+			{
+				char buffer[0x100] = {0};
+				const std::string source_hash = game::MSG_ReadStringLine(msg,
+					buffer, static_cast<unsigned int>(sizeof(buffer)));
+
+				const auto path = get_usermap_file_path(mapname, file);
+				const auto hash = get_file_hash(path);
+
+				if ((!source_hash.empty() && hash != source_hash) || (source_hash.empty() && !file.optional))
+				{
+					command::execute("disconnect");
+					scheduler::once([]
+					{
+						connect(server_connection_state.host);
+					}, scheduler::pipeline::main);
+					return;
+				}
+			}
+
+			utils::hook::invoke<void>(0x1409B3FE0, mapname, gametype);
+		}
+
+		void loading_new_map_cl_stub(utils::hook::assembler& a)
+		{
+			a.pushad64();
+			a.mov(r8, r12);
+			a.call_aligned(set_new_map);
+			a.popad64();
+
+			a.jmp(0x1409B04D7);
+		}
+
+		utils::hook::detour net_out_of_band_print_hook;
+		void net_out_of_band_print_stub(game::netsrc_t sock, game::netadr_s* addr, const char* data)
+		{
+			if (!std::strstr(data, "loadingnewmap"))
+			{
+				return net_out_of_band_print_hook.invoke<void>(sock, addr, data);
+			}
+
+			std::string buffer{};
+			const auto line = [&](const std::string& data_)
+			{
+				buffer.append(data_);
+				buffer.append("\n");
+			};
+
+			const auto* sv_gametype = game::Dvar_FindVar("g_gametype");
+			line("loadingnewmap");
+			line(current_sv_mapname);
+			line(sv_gametype->current.string);
+
+			const auto is_usermap = fastfiles::usermap_exists(current_sv_mapname);
+			for (const auto& file : usermap_files)
+			{
+				if (is_usermap)
+				{
+					const auto filename = get_usermap_file_path(current_sv_mapname, file);
+					const auto hash = get_file_hash(filename);
+					line(hash);
+				}
+				else
+				{
+					line("");
+				}
+			}
+
+			net_out_of_band_print_hook.invoke<void>(sock, addr, buffer.data());
 		}
 
 		void reset_mem_stuff(game::SvServerInitSettings* init_settings)
@@ -679,6 +863,8 @@ namespace party
 			console::error("No map specified.\n");
 			return;
 		}
+
+		update_usermap(mapname);
 
 		if (!game::SV_MapExists(mapname.data()))
 		{
@@ -904,6 +1090,9 @@ namespace party
 			utils::hook::call(0x1409B404A, com_restart_for_frontend_stub); // may not be necessary (map rotate)
 
 			sv_start_map_for_party_hook.create(0x140C4D150, sv_start_map_for_party_stub);
+
+			utils::hook::jump(0x1409B04D2, utils::hook::assemble(loading_new_map_cl_stub), true);
+			net_out_of_band_print_hook.create(game::NET_OutOfBandPrint, net_out_of_band_print_stub);
 
 			utils::hook::nop(0x140C563C3, 12); // far jump = 12 bytes
 			utils::hook::jump(0x140C563C3, utils::hook::assemble(reset_mem_stuff_stub), true);
@@ -1228,6 +1417,17 @@ namespace party
 				info.set("sv_wwwBaseUrl", get_dvar_string("sv_wwwBaseUrl"));
 				info.set("sv_discordImageUrl", get_dvar_string("sv_discordImageUrl"));
 				info.set("sv_discordImageText", get_dvar_string("sv_discordImageText"));
+
+				const auto mapname = get_dvar_string("mapname");
+				if (!fastfiles::is_stock_map(mapname))
+				{
+					for (const auto& file : usermap_files)
+					{
+						const auto path = get_usermap_file_path(mapname, file);
+						const auto hash = get_file_hash(path);
+						info.set(file.name, hash);
+					}
+				}
 
 				const auto fs_game = get_dvar_string("fs_game");
 				info.set("fs_game", fs_game);

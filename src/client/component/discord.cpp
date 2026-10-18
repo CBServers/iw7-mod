@@ -547,11 +547,7 @@ namespace discord
 
 		void join_game(const char* join_secret)
 		{
-#ifdef _DEBUG
-			console::debug("Discord: join_game called with secret '%s'\n", join_secret);
-#endif
-
-			scheduler::once([=]
+			if (!join_secret || !join_secret[0])
 			{
 				return;
 			}

@@ -1091,7 +1091,7 @@ namespace party
 
 			sv_start_map_for_party_hook.create(0x140C4D150, sv_start_map_for_party_stub);
 
-			utils::hook::jump(0x1409B04D2, utils::hook::assemble(loading_new_map_cl_stub), true);
+			utils::hook::jump(0x1409B04D2, utils::hook::assemble(loading_new_map_cl_stub));
 			net_out_of_band_print_hook.create(game::NET_OutOfBandPrint, net_out_of_band_print_stub);
 
 			utils::hook::nop(0x140C563C3, 12); // far jump = 12 bytes
